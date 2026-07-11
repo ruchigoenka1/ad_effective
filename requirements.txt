@@ -1,0 +1,14 @@
+# Data Manipulation & Math
+numpy>=1.26.0
+pandas>=2.2.0
+scipy>=1.12.0
+
+# Visualization
+plotly>=5.18.0
+
+# Framework
+streamlit>=1.33.0
+
+# Optional: Useful for if you decide to implement 
+# the Bayesian modeling via PyMC or advanced regression
+# statsmodels>=0.14.0
