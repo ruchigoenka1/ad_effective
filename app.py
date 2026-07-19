@@ -725,21 +725,27 @@ if uploaded_file:
                     days_order_heat = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
                     pivot_df = pivot_df.reindex(days_order_heat)
                     
-                    # Apply intelligent formatting based on whether the metric is cash or a ratio
-                    text_format = "%{text:,.0f}" if "INR" in heatmap_metric else "%{text:.1f}%"
+                    # 1. Clean the text display so 'nan' is replaced with an empty string
+                    if "INR" in heatmap_metric:
+                        text_display = [[f"{val:,.0f}" if pd.notnull(val) else "" for val in row] for row in pivot_df.values]
+                    else:
+                        text_display = [[f"{val:.1f}%" if pd.notnull(val) else "" for val in row] for row in pivot_df.values]
 
+                    # 2. Build the Heatmap Trace
                     fig_heat = go.Figure(data=go.Heatmap(
                         z=pivot_df.values,
                         x=pivot_df.columns,
                         y=pivot_df.index,
                         colorscale='Inferno',
-                        text=pivot_df.values,
-                        texttemplate=text_format,
+                        text=text_display,
+                        texttemplate="%{text}",
                         textfont={"size": 11},
                         hoverongaps=False
                     ))
                     
+                    # 3. The trick to white NaN blocks: Set the plot area background to white
                     heat_layout = dark_layout.copy()
+                    heat_layout['plot_bgcolor'] = '#FFFFFF'  # White background shines through transparent NaNs
                     heat_layout['xaxis'] = dict(showgrid=False, title="Hour of Day", tickangle=45)
                     heat_layout['yaxis'] = dict(showgrid=False, title="Day of Week", autorange="reversed") 
                     
