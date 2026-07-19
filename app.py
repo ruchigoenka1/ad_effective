@@ -393,4 +393,5 @@ if uploaded_file:
                 st.error("Error: Start Date must be before or equal to End Date.")
         else:
             st.warning("No data available for the selected scope.")
-    ```
+else:
+    st.info("Upload your raw Facebook Ads CSV or XLSX in the sidebar to run the diagnostics.")
