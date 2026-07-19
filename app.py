@@ -208,6 +208,7 @@ if uploaded_file:
     # --- Tab 5: Rolling Diagnostics ---
     # --- Tab 5: Rolling Diagnostics ---
     # --- Tab 5: Rolling Diagnostics ---
+    # --- Tab 5: Rolling Diagnostics ---
     with tab5:
         st.subheader("Dynamic Rolling Weighted Averages")
         
@@ -276,6 +277,7 @@ if uploaded_file:
                     ad_df['Roll Cost/LPV'] = np.where(ad_df['Roll LPV'] > 0, ad_df['Roll Spend'] / ad_df['Roll LPV'], 0)
                     ad_df['Roll CPM'] = np.where(ad_df['Roll Imp'] > 0, (ad_df['Roll Spend'] / ad_df['Roll Imp']) * 1000, 0)
                     ad_df['Roll CTR (%)'] = np.where(ad_df['Roll Imp'] > 0, (ad_df['Roll Clicks'] / ad_df['Roll Imp']) * 100, 0)
+                    ad_df['Roll Link->LPV (%)'] = np.where(ad_df['Roll Clicks'] > 0, (ad_df['Roll LPV'] / ad_df['Roll Clicks']) * 100, 0)
                     
                     ad_df['Ad name'] = ad
                     all_ads_rolled.append(ad_df)
@@ -287,7 +289,7 @@ if uploaded_file:
                 # --- Tabular Data Audit for Comparison ---
                 st.markdown(f"### 📋 {rolling_window}-Day Rolling Data Log (All Ads)")
                 
-                display_combined_df = combined_df[['Date', 'Ad name', 'Roll Spend', 'Roll CPA', 'Roll LPV->Purchase %', 'Roll CPM', 'Roll CTR (%)']].copy()
+                display_combined_df = combined_df[['Date', 'Ad name', 'Roll Spend', 'Roll CPA', 'Roll LPV->Purchase %', 'Roll Link->LPV (%)', 'Roll CPM', 'Roll CTR (%)']].copy()
                 display_combined_df = display_combined_df.sort_values(by=['Date', 'Ad name'], ascending=[False, True])
                 
                 st.dataframe(
@@ -296,6 +298,7 @@ if uploaded_file:
                         'Roll Spend': '₹{:,.2f}',
                         'Roll CPA': '₹{:,.2f}',
                         'Roll LPV->Purchase %': '{:.2f}%',
+                        'Roll Link->LPV (%)': '{:.2f}%',
                         'Roll CPM': '₹{:,.2f}',
                         'Roll CTR (%)': '{:.2f}%'
                     }),
@@ -315,10 +318,9 @@ if uploaded_file:
                         ad_data = combined_df[combined_df['Ad name'] == ad]
                         base_color = color_palette[i % len(color_palette)]
                         
-                        # Actual Data
-                        fig.add_trace(go.Scatter(x=ad_data['Date'], y=ad_data[metric_col], mode='lines', name=ad, line=dict(color=base_color, width=2)))
+                        # Added markers to prevent blank screens on single-day files
+                        fig.add_trace(go.Scatter(x=ad_data['Date'], y=ad_data[metric_col], mode='lines+markers', name=ad, line=dict(color=base_color, width=2)))
                         
-                        # Trendline
                         if len(ad_data) > 1:
                             x_num = np.arange(len(ad_data))
                             z = np.polyfit(x_num, ad_data[metric_col], 1)
@@ -333,6 +335,7 @@ if uploaded_file:
 
                 plot_comparison_metric('Roll CPA', 'Cost Per Acquisition (CPA)', 'Rolling CPA (INR)')
                 plot_comparison_metric('Roll LPV->Purchase %', 'Conversion Rate (LPV -> Purchase)', 'LPV -> Purchase (%)')
+                plot_comparison_metric('Roll Link->LPV (%)', 'Link Click to Landing Page Rate', 'Link -> LPV (%)')
                 plot_comparison_metric('Roll Spend', 'Budget Deployment (Spend)', 'Rolling Spend (INR)')
                 plot_comparison_metric('Roll CPM', 'Cost Per 1,000 Impressions (CPM)', 'Rolling CPM (INR)')
                 plot_comparison_metric('Roll CTR (%)', 'Click-Through Rate (CTR)', 'Rolling CTR (%)')
@@ -377,6 +380,7 @@ if uploaded_file:
                 daily_df['Roll CPA'] = np.where(daily_df['Roll Purch'] > 0, daily_df['Roll Spend'] / daily_df['Roll Purch'], 0)
                 daily_df['Roll CPM'] = np.where(daily_df['Roll Imp'] > 0, (daily_df['Roll Spend'] / daily_df['Roll Imp']) * 1000, 0)
                 daily_df['Roll CTR (%)'] = np.where(daily_df['Roll Imp'] > 0, (daily_df['Roll Clicks'] / daily_df['Roll Imp']) * 100, 0)
+                daily_df['Roll Link->LPV (%)'] = np.where(daily_df['Roll Clicks'] > 0, (daily_df['Roll LPV'] / daily_df['Roll Clicks']) * 100, 0)
                 
                 latest_data = daily_df.iloc[-1]
                 
@@ -401,7 +405,7 @@ if uploaded_file:
                 st.markdown("---")
                 st.markdown(f"### 📋 {rolling_window}-Day Rolling Data Log")
                 
-                display_df = daily_df[['Roll Spend', 'Roll CPA', 'Roll CPM', 'Roll CTR (%)', 'Roll Cost/LPV', 'Roll LPV->Purchase %']].copy()
+                display_df = daily_df[['Roll Spend', 'Roll CPA', 'Roll CPM', 'Roll CTR (%)', 'Roll Cost/LPV', 'Roll Link->LPV (%)', 'Roll LPV->Purchase %']].copy()
                 display_df = display_df.sort_index(ascending=False) 
                 
                 st.dataframe(
@@ -411,6 +415,7 @@ if uploaded_file:
                         'Roll CPM': '₹{:,.2f}',
                         'Roll CTR (%)': '{:.2f}%',
                         'Roll Cost/LPV': '₹{:,.2f}',
+                        'Roll Link->LPV (%)': '{:.2f}%',
                         'Roll LPV->Purchase %': '{:.2f}%'
                     }),
                     use_container_width=True
@@ -421,13 +426,12 @@ if uploaded_file:
                     st.markdown(f"#### {title}")
                     fig = go.Figure()
                     
-                    # Actual Data
+                    # Added markers to prevent blank screens on single-day files
                     fig.add_trace(go.Scatter(
-                        x=daily_df.index, y=daily_df[metric_col], mode='lines', 
+                        x=daily_df.index, y=daily_df[metric_col], mode='lines+markers', 
                         name=f'Rolling {title}', line=dict(color=line_color, width=3)
                     ))
                     
-                    # Trendline
                     if len(daily_df) > 1:
                         x_num = np.arange(len(daily_df))
                         z = np.polyfit(x_num, daily_df[metric_col], 1)
@@ -444,6 +448,7 @@ if uploaded_file:
                 st.markdown(f"### Historical {rolling_window}-Day Efficiency Trajectory")
                 plot_individual_metric('Roll CPA', 'Cost Per Acquisition (CPA)', 'Rolling CPA (INR)', '#0066CC')
                 plot_individual_metric('Roll LPV->Purchase %', 'Conversion Rate (LPV -> Purchase)', 'LPV -> Purchase (%)', '#A0C4FF')
+                plot_individual_metric('Roll Link->LPV (%)', 'Link Click to Landing Page Rate', 'Link -> LPV (%)', '#00CED1')
                 plot_individual_metric('Roll Spend', 'Budget Deployment (Spend)', 'Rolling Spend (INR)', '#FFFFFF')
                 plot_individual_metric('Roll CPM', 'Cost Per 1,000 Impressions (CPM)', 'Rolling CPM (INR)', '#FFA500')
                 plot_individual_metric('Roll CTR (%)', 'Click-Through Rate (CTR)', 'Rolling CTR (%)', '#32CD32')
@@ -697,7 +702,7 @@ if uploaded_file:
             with col_roll2:
                 metric_to_plot = st.selectbox(
                     "Select Metric to Plot Over Time:", 
-                    ["Rolling CPA", "Rolling Cost/LPV", "Rolling CTR (%)", "Rolling LPV->Purchase (%)"]
+                    ["Rolling CPA", "Rolling Cost/LPV", "Rolling CTR (%)", "Rolling LPV->Purchase (%)", "Rolling Link->LPV (%)"]
                 )
 
             daily_dow_df = time_base_df.groupby('Reporting starts').agg({
@@ -724,6 +729,7 @@ if uploaded_file:
                 group['Rolling Cost/LPV'] = np.where(group['Roll LPV'] > 0, group['Roll Spend'] / group['Roll LPV'], 0)
                 group['Rolling CTR (%)'] = np.where(group['Roll Imp'] > 0, (group['Roll Clicks'] / group['Roll Imp']) * 100, 0)
                 group['Rolling LPV->Purchase (%)'] = np.where(group['Roll LPV'] > 0, (group['Roll Purch'] / group['Roll LPV']) * 100, 0)
+                group['Rolling Link->LPV (%)'] = np.where(group['Roll Clicks'] > 0, (group['Roll LPV'] / group['Roll Clicks']) * 100, 0)
                 
                 rolled_dow_list.append(group)
                 
@@ -755,6 +761,8 @@ if uploaded_file:
 
         else:
             st.warning("No data available for the selected scope.")
+
+
 
 else:
     st.info("Upload your raw Facebook Ads CSV or XLSX in the sidebar to run the diagnostics.")
