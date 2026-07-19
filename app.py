@@ -702,7 +702,15 @@ if uploaded_file:
                     
                     heatmap_metric_label = st.selectbox(
                         "Select Metric for Heatmap:", 
-                        ["CPA (INR)", "Amount spent (INR)", "Conversions (Results)", "CTR (%)", "LPV->Purchase (%)", "Link->LPV (%)"],
+                        [
+                            "CPA (INR)", 
+                            "Amount spent (INR)", 
+                            "Average Spend (INR)", 
+                            "Conversions (Results)", 
+                            "CTR (%)", 
+                            "LPV->Purchase (%)", 
+                            "Link->LPV (%)"
+                        ],
                         key="heatmap_metric_select"
                     )
 
@@ -710,6 +718,7 @@ if uploaded_file:
                     metric_map = {
                         "CPA (INR)": "CPA (INR)",
                         "Amount spent (INR)": "Amount spent (INR)",
+                        "Average Spend (INR)": "Average Spend (INR)",
                         "Conversions (Results)": "Results_Heatmap", 
                         "CTR (%)": "CTR (%)",
                         "LPV->Purchase (%)": "LPV->Purchase (%)",
@@ -718,12 +727,14 @@ if uploaded_file:
                     target_metric = metric_map[heatmap_metric_label]
 
                     # Group by both Day of Week and Time Block to build the grid
+                    # We add 'Reporting starts': 'nunique' to count how many distinct days this time block represents
                     heat_df = filtered_time_df.groupby(['Day of Week', 'Time Block']).agg({
                         'Amount spent (INR)': 'sum',
                         'Impressions': 'sum',
                         'Link clicks': 'sum',
                         'Landing page views': 'sum',
-                        'Results': 'sum'
+                        'Results': 'sum',
+                        'Reporting starts': 'nunique' 
                     }).reset_index()
                     
                     # Calculate diagnostic ratios for the grid (using np.nan for 0s to keep gaps white)
@@ -731,9 +742,13 @@ if uploaded_file:
                     heat_df['Link->LPV (%)'] = np.where(heat_df['Link clicks'] > 0, (heat_df['Landing page views'] / heat_df['Link clicks']) * 100, np.nan)
                     heat_df['LPV->Purchase (%)'] = np.where(heat_df['Landing page views'] > 0, (heat_df['Results'] / heat_df['Landing page views']) * 100, np.nan)
                     
-                    # CPA and Conversions logic: np.nan instead of 0 to create white gaps
+                    # CPA, Conversions, and Average Spend logic
                     heat_df['CPA (INR)'] = np.where(heat_df['Results'] > 0, heat_df['Amount spent (INR)'] / heat_df['Results'], np.nan)
                     heat_df['Results_Heatmap'] = np.where(heat_df['Results'] > 0, heat_df['Results'], np.nan)
+                    heat_df['Average Spend (INR)'] = np.where(heat_df['Amount spent (INR)'] > 0, heat_df['Amount spent (INR)'] / heat_df['Reporting starts'], np.nan)
+                    
+                    # Convert raw spend to NaN if it is exactly 0 so it also renders as a white block
+                    heat_df['Amount spent (INR)'] = np.where(heat_df['Amount spent (INR)'] > 0, heat_df['Amount spent (INR)'], np.nan)
                     
                     # Create the Pivot Table WITHOUT .fillna(0)
                     pivot_df = heat_df.pivot(index='Day of Week', columns='Time Block', values=target_metric)
