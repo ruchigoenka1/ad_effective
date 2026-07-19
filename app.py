@@ -315,6 +315,15 @@ if uploaded_file:
             
             if not daily_df.empty:
                 daily_df.set_index('Reporting starts', inplace=True)
+                
+                # --- NEW LOGIC: Trim leading inactive days for individual ads ---
+                if selected_rolling_ad != "All Ads (Overall)":
+                    first_spend_date = daily_df[daily_df['Amount spent (INR)'] > 0].index.min()
+                    if pd.notna(first_spend_date):
+                        daily_df = daily_df.loc[first_spend_date:]
+                # ---------------------------------------------------------------
+                
+                # Reindex creates a continuous timeline from the true start date to the max date
                 idx = pd.date_range(daily_df.index.min(), daily_df.index.max())
                 daily_df = daily_df.reindex(idx, fill_value=0)
                 
