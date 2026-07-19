@@ -621,6 +621,7 @@ if uploaded_file:
                     st.plotly_chart(fig_w_lpv_purch, use_container_width=True)
 
                 # --- 3. Time of Day (Hourly) Matrix ---
+                # --- 3. Time of Day (Hourly) Matrix ---
                 st.markdown("---")
                 st.markdown("### ⏰ Hourly Performance Breakdown (Time of Day)")
                 
@@ -689,9 +690,69 @@ if uploaded_file:
                         fig_h_lpv_purch = go.Figure(data=[go.Bar(x=hour_agg['Time Block'], y=hour_agg['LPV->Purchase (%)'], marker_color='#32CD32')])
                         fig_h_lpv_purch.update_layout(title="LPV -> Purchase (%) by Hour", yaxis_title="Percentage (%)", **hourly_bar_layout)
                         st.plotly_chart(fig_h_lpv_purch, use_container_width=True)
+
+                    # --- NEW: Dayparting Heatmap ---
+                    st.markdown("---")
+                    st.markdown("#### 🕒 Dayparting Heatmap (Day of Week vs. Hour)")
+                    st.caption("Identify exact recurring weekly schedule windows where ad efficiency peaks or leaks.")
+                    
+                    heatmap_metric = st.selectbox(
+                        "Select Metric for Heatmap:", 
+                        ["CPA (INR)", "Amount spent (INR)", "CTR (%)", "LPV->Purchase (%)", "Link->LPV (%)"],
+                        key="heatmap_metric_select"
+                    )
+
+                    # Group by both Day of Week and Time Block to build the grid
+                    heat_df = filtered_time_df.groupby(['Day of Week', 'Time Block']).agg({
+                        'Amount spent (INR)': 'sum',
+                        'Impressions': 'sum',
+                        'Link clicks': 'sum',
+                        'Landing page views': 'sum',
+                        'Results': 'sum'
+                    }).reset_index()
+                    
+                    # Calculate diagnostic ratios for the grid
+                    heat_df['CTR (%)'] = np.where(heat_df['Impressions'] > 0, (heat_df['Link clicks'] / heat_df['Impressions']) * 100, 0)
+                    heat_df['Link->LPV (%)'] = np.where(heat_df['Link clicks'] > 0, (heat_df['Landing page views'] / heat_df['Link clicks']) * 100, 0)
+                    heat_df['LPV->Purchase (%)'] = np.where(heat_df['Landing page views'] > 0, (heat_df['Results'] / heat_df['Landing page views']) * 100, 0)
+                    heat_df['CPA (INR)'] = np.where(heat_df['Results'] > 0, heat_df['Amount spent (INR)'] / heat_df['Results'], 0)
+                    
+                    # Create the Pivot Table
+                    pivot_df = heat_df.pivot(index='Day of Week', columns='Time Block', values=heatmap_metric).fillna(0)
+                    
+                    # Reorder Days Chronologically (Plotly charts bottom-up, so reversing puts Monday at the top)
+                    days_order_heat = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                    pivot_df = pivot_df.reindex(days_order_heat)
+                    
+                    # Apply intelligent formatting based on whether the metric is cash or a ratio
+                    text_format = "%{text:,.0f}" if "INR" in heatmap_metric else "%{text:.1f}%"
+
+                    fig_heat = go.Figure(data=go.Heatmap(
+                        z=pivot_df.values,
+                        x=pivot_df.columns,
+                        y=pivot_df.index,
+                        colorscale='Inferno',
+                        text=pivot_df.values,
+                        texttemplate=text_format,
+                        textfont={"size": 11},
+                        hoverongaps=False
+                    ))
+                    
+                    heat_layout = dark_layout.copy()
+                    heat_layout['xaxis'] = dict(showgrid=False, title="Hour of Day", tickangle=45)
+                    heat_layout['yaxis'] = dict(showgrid=False, title="Day of Week", autorange="reversed") 
+                    
+                    fig_heat.update_layout(
+                        title=f"Recurring Weekly Schedule Map: {heatmap_metric}", 
+                        height=500,
+                        **heat_layout
+                    )
+                    st.plotly_chart(fig_heat, use_container_width=True)
+
                 else:
                     st.info("Hourly breakdown data not found. To view this, ensure your Facebook export includes the 'Time of day (ad account time zone)' breakdown.")
 
+            
             # --- 4. Rolling DOW Trends (Weighted Average of Last N specific days) ---
             st.markdown("---")
             st.markdown("#### 🔄 Rolling Day-of-the-Week Trends")
