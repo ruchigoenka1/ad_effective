@@ -7,6 +7,31 @@ from plotly.subplots import make_subplots
 # --- Page Configuration ---
 st.set_page_config(page_title="Ad Strategy Optimizer", layout="wide")
 
+# # --- Helper Functions ---
+# @st.cache_data
+# def load_and_clean_data(file):
+#     # Support both CSV and XLSX
+#     if file.name.endswith('.csv'):
+#         df = pd.read_csv(file)
+#     else:
+#         df = pd.read_excel(file)
+    
+#     # Standardize column types based on FB export
+#     df['Reporting starts'] = pd.to_datetime(df['Reporting starts'])
+#     df['Amount spent (INR)'] = pd.to_numeric(df['Amount spent (INR)'], errors='coerce').fillna(0)
+#     df['Results'] = pd.to_numeric(df['Results'], errors='coerce').fillna(0)
+#     df['Frequency'] = pd.to_numeric(df['Frequency'], errors='coerce').fillna(1.0)
+#     df['CTR'] = pd.to_numeric(df['CTR (link click-through rate)'], errors='coerce').fillna(0)
+    
+#     # Safely add Landing page views for Tab 5
+#     if 'Landing page views' in df.columns:
+#         df['Landing page views'] = pd.to_numeric(df['Landing page views'], errors='coerce').fillna(0)
+#     else:
+#         df['Landing page views'] = 0
+    
+#     return df
+
+
 # --- Helper Functions ---
 @st.cache_data
 def load_and_clean_data(file):
@@ -23,11 +48,18 @@ def load_and_clean_data(file):
     df['Frequency'] = pd.to_numeric(df['Frequency'], errors='coerce').fillna(1.0)
     df['CTR'] = pd.to_numeric(df['CTR (link click-through rate)'], errors='coerce').fillna(0)
     
-    # Safely add Landing page views for Tab 5
+    # Safely add Landing page views
     if 'Landing page views' in df.columns:
         df['Landing page views'] = pd.to_numeric(df['Landing page views'], errors='coerce').fillna(0)
     else:
         df['Landing page views'] = 0
+        
+    # --- NEW: Time of Day parsing ---
+    if 'Time of day (ad account time zone)' in df.columns:
+        # Extracts just the starting hour (e.g., "00:00" from "00:00:00 - 00:59:59")
+        df['Time Block'] = df['Time of day (ad account time zone)'].str[:2] + ":00"
+    else:
+        df['Time Block'] = "N/A"
     
     return df
 
@@ -162,6 +194,7 @@ if uploaded_file:
                 
                 st.plotly_chart(fig_mech, use_container_width=True)
 
+    # --- Tab 5: Rolling Diagnostics ---
     # --- Tab 5: Rolling Diagnostics ---
     # --- Tab 5: Rolling Diagnostics ---
     # --- Tab 5: Rolling Diagnostics ---
@@ -378,41 +411,39 @@ if uploaded_file:
                     use_container_width=True
                 )
                 
-                if show_rolling_charts:
-                    st.markdown("---")
-                    st.markdown(f"### Historical {rolling_window}-Day Efficiency Trajectory")
+                # --- Plotting Helper for Individual Mode ---
+                def plot_individual_metric(metric_col, title, y_title, line_color):
+                    st.markdown(f"#### {title}")
+                    fig = go.Figure()
                     
-                    # --- Plotting Helper for Individual Mode ---
-                    def plot_individual_metric(metric_col, title, y_title, line_color):
-                        st.markdown(f"#### {title}")
-                        fig = go.Figure()
-                        
-                        # Actual Data
+                    # Actual Data
+                    fig.add_trace(go.Scatter(
+                        x=daily_df.index, y=daily_df[metric_col], mode='lines', 
+                        name=f'Rolling {title}', line=dict(color=line_color, width=3)
+                    ))
+                    
+                    # Trendline
+                    if len(daily_df) > 1:
+                        x_num = np.arange(len(daily_df))
+                        z = np.polyfit(x_num, daily_df[metric_col], 1)
+                        p = np.poly1d(z)
                         fig.add_trace(go.Scatter(
-                            x=daily_df.index, y=daily_df[metric_col], mode='lines', 
-                            name=f'Rolling {title}', line=dict(color=line_color, width=3)
+                            x=daily_df.index, y=p(x_num), mode='lines', name='Trend (Linear)', 
+                            line=dict(color='#FF4B4B', width=2, dash='dash')
                         ))
                         
-                        # Trendline
-                        if len(daily_df) > 1:
-                            x_num = np.arange(len(daily_df))
-                            z = np.polyfit(x_num, daily_df[metric_col], 1)
-                            p = np.poly1d(z)
-                            fig.add_trace(go.Scatter(
-                                x=daily_df.index, y=p(x_num), mode='lines', name='Trend (Linear)', 
-                                line=dict(color='#FF4B4B', width=2, dash='dash')
-                            ))
-                            
-                        fig.update_layout(yaxis_title=y_title, **dark_layout)
-                        st.plotly_chart(fig, use_container_width=True)
+                    fig.update_layout(yaxis_title=y_title, **dark_layout)
+                    st.plotly_chart(fig, use_container_width=True)
 
-                    plot_individual_metric('Roll CPA', 'Cost Per Acquisition (CPA)', 'Rolling CPA (INR)', '#0066CC')
-                    plot_individual_metric('Roll LPV->Purchase %', 'Conversion Rate (LPV -> Purchase)', 'LPV -> Purchase (%)', '#A0C4FF')
-                    plot_individual_metric('Roll Spend', 'Budget Deployment (Spend)', 'Rolling Spend (INR)', '#FFFFFF')
-                    plot_individual_metric('Roll CPM', 'Cost Per 1,000 Impressions (CPM)', 'Rolling CPM (INR)', '#FFA500')
-                    plot_individual_metric('Roll CTR (%)', 'Click-Through Rate (CTR)', 'Rolling CTR (%)', '#32CD32')
+                st.markdown("---")
+                st.markdown(f"### Historical {rolling_window}-Day Efficiency Trajectory")
+                plot_individual_metric('Roll CPA', 'Cost Per Acquisition (CPA)', 'Rolling CPA (INR)', '#0066CC')
+                plot_individual_metric('Roll LPV->Purchase %', 'Conversion Rate (LPV -> Purchase)', 'LPV -> Purchase (%)', '#A0C4FF')
+                plot_individual_metric('Roll Spend', 'Budget Deployment (Spend)', 'Rolling Spend (INR)', '#FFFFFF')
+                plot_individual_metric('Roll CPM', 'Cost Per 1,000 Impressions (CPM)', 'Rolling CPM (INR)', '#FFA500')
+                plot_individual_metric('Roll CTR (%)', 'Click-Through Rate (CTR)', 'Rolling CTR (%)', '#32CD32')
 
-        # --- SECTION: Performance Analysis (DOW & Weekly) ---
+        # --- SECTION: Performance Analysis (DOW, Weekly, Hourly) ---
         st.markdown("---")
         st.subheader("📅 Time-Based Performance Analysis")
         
@@ -579,7 +610,79 @@ if uploaded_file:
                     fig_w_lpv_purch.update_layout(title="LPV -> Purchase (%) by Week", yaxis_title="Percentage (%)", **weekly_bar_layout)
                     st.plotly_chart(fig_w_lpv_purch, use_container_width=True)
 
-            # --- 3. Rolling DOW Trends (Weighted Average of Last N specific days) ---
+                # --- 3. Time of Day (Hourly) Matrix ---
+                st.markdown("---")
+                st.markdown("### ⏰ Hourly Performance Breakdown (Time of Day)")
+                
+                if "Time Block" in filtered_time_df.columns and not (filtered_time_df['Time Block'] == "N/A").all():
+                    hour_agg = filtered_time_df.groupby('Time Block').agg({
+                        'Amount spent (INR)': 'sum',
+                        'Impressions': 'sum',
+                        'Link clicks': 'sum',
+                        'Landing page views': 'sum',
+                        'Results': 'sum'
+                    }).reset_index()
+                    
+                    hour_agg = hour_agg.sort_values('Time Block')
+                    
+                    hour_agg['CTR (%)'] = np.where(hour_agg['Impressions'] > 0, (hour_agg['Link clicks'] / hour_agg['Impressions']) * 100, 0)
+                    hour_agg['Cost/LPV (INR)'] = np.where(hour_agg['Landing page views'] > 0, hour_agg['Amount spent (INR)'] / hour_agg['Landing page views'], 0)
+                    hour_agg['Link->LPV (%)'] = np.where(hour_agg['Link clicks'] > 0, (hour_agg['Landing page views'] / hour_agg['Link clicks']) * 100, 0)
+                    hour_agg['LPV->Purchase (%)'] = np.where(hour_agg['Landing page views'] > 0, (hour_agg['Results'] / hour_agg['Landing page views']) * 100, 0)
+                    hour_agg['CPA (INR)'] = np.where(hour_agg['Results'] > 0, hour_agg['Amount spent (INR)'] / hour_agg['Results'], 0)
+                    
+                    with st.expander("Show Raw Data Table (Hourly Breakdown)"):
+                        st.dataframe(
+                            hour_agg.style.format({
+                                'Amount spent (INR)': '₹{:,.2f}',
+                                'Impressions': '{:,.0f}',
+                                'Link clicks': '{:,.0f}',
+                                'Landing page views': '{:,.0f}',
+                                'Results': '{:,.0f}',
+                                'CTR (%)': '{:.2f}%',
+                                'Cost/LPV (INR)': '₹{:,.2f}',
+                                'Link->LPV (%)': '{:.2f}%',
+                                'LPV->Purchase (%)': '{:.2f}%',
+                                'CPA (INR)': '₹{:,.2f}'
+                            }),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+                    hourly_bar_layout = dark_layout.copy()
+                    hourly_bar_layout['xaxis'] = dict(showgrid=False, gridcolor='#333333', tickangle=45)
+                    
+                    col_h1, col_h2, col_h3 = st.columns(3)
+                    with col_h1:
+                        fig_h_cpa = go.Figure(data=[go.Bar(x=hour_agg['Time Block'], y=hour_agg['CPA (INR)'], marker_color='#FF4B4B')])
+                        fig_h_cpa.update_layout(title="Average CPA by Hour", yaxis_title="CPA (INR)", **hourly_bar_layout)
+                        st.plotly_chart(fig_h_cpa, use_container_width=True)
+                    with col_h2:
+                        fig_h_cplpv = go.Figure(data=[go.Bar(x=hour_agg['Time Block'], y=hour_agg['Cost/LPV (INR)'], marker_color='#FFA500')])
+                        fig_h_cplpv.update_layout(title="Cost per LPV by Hour", yaxis_title="Cost (INR)", **hourly_bar_layout)
+                        st.plotly_chart(fig_h_cplpv, use_container_width=True)
+                    with col_h3:
+                        fig_h_ctr = go.Figure(data=[go.Bar(x=hour_agg['Time Block'], y=hour_agg['CTR (%)'], marker_color='#0088CC')])
+                        fig_h_ctr.update_layout(title="Click-Through Rate (CTR) by Hour", yaxis_title="CTR (%)", **hourly_bar_layout)
+                        st.plotly_chart(fig_h_ctr, use_container_width=True)
+                        
+                    col_h4, col_h5, col_h6 = st.columns(3)
+                    with col_h4:
+                        fig_h_dropoff = go.Figure(data=[go.Bar(x=hour_agg['Time Block'], y=hour_agg['Link->LPV (%)'], marker_color='#A0C4FF')])
+                        fig_h_dropoff.update_layout(title="Link Click to LPV (%) by Hour", yaxis_title="Percentage (%)", **hourly_bar_layout)
+                        st.plotly_chart(fig_h_dropoff, use_container_width=True)
+                    with col_h5:
+                        fig_h_spend = go.Figure(data=[go.Bar(x=hour_agg['Time Block'], y=hour_agg['Amount spent (INR)'], marker_color='#FFFFFF')])
+                        fig_h_spend.update_layout(title="Total Spend by Hour", yaxis_title="Spend (INR)", **hourly_bar_layout)
+                        st.plotly_chart(fig_h_spend, use_container_width=True)
+                    with col_h6:
+                        fig_h_lpv_purch = go.Figure(data=[go.Bar(x=hour_agg['Time Block'], y=hour_agg['LPV->Purchase (%)'], marker_color='#32CD32')])
+                        fig_h_lpv_purch.update_layout(title="LPV -> Purchase (%) by Hour", yaxis_title="Percentage (%)", **hourly_bar_layout)
+                        st.plotly_chart(fig_h_lpv_purch, use_container_width=True)
+                else:
+                    st.info("Hourly breakdown data not found. To view this, ensure your Facebook export includes the 'Time of day (ad account time zone)' breakdown.")
+
+            # --- 4. Rolling DOW Trends (Weighted Average of Last N specific days) ---
             st.markdown("---")
             st.markdown("#### 🔄 Rolling Day-of-the-Week Trends")
             
@@ -647,7 +750,6 @@ if uploaded_file:
 
         else:
             st.warning("No data available for the selected scope.")
-
 
 else:
     st.info("Upload your raw Facebook Ads CSV or XLSX in the sidebar to run the diagnostics.")
