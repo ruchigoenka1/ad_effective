@@ -163,23 +163,33 @@ if uploaded_file:
                 st.plotly_chart(fig_mech, use_container_width=True)
 
     # --- Tab 5: Rolling Diagnostics ---
+    # --- Tab 5: Rolling Diagnostics ---
     with tab5:
         st.subheader("Dynamic Rolling Weighted Averages")
         
         col_ctrl1, col_ctrl2 = st.columns(2)
         with col_ctrl1:
-            # Added "Compare All Ads" to the top of the dropdown list
             ad_options = ["Compare All Ads", "All Ads (Overall)"] + data['Ad name'].dropna().unique().tolist()
             selected_rolling_ad = st.selectbox("Select Ad/Scope:", options=ad_options, key="rolling_ad_select")
         with col_ctrl2:
             rolling_window = st.number_input("Rolling Window (Days)", min_value=1, max_value=90, value=7, step=1)
+
+        # Define the Dark Theme layout to be reused across all charts in this tab
+        dark_layout = dict(
+            plot_bgcolor='black',
+            paper_bgcolor='black',
+            font=dict(color='white'),
+            xaxis=dict(showgrid=True, gridcolor='#333333', title='Date'),
+            yaxis=dict(showgrid=True, gridcolor='#333333'),
+            hovermode='x unified',
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
             
         if selected_rolling_ad == "Compare All Ads":
-            # --- COMPARISON MODE (Black Background, Multiple Metrics) ---
+            # --- COMPARISON MODE ---
             st.markdown("---")
             st.markdown(f"### Visualizing {rolling_window}-Day Rolling Metrics Across All Ads")
             
-            # Prepare combined rolled data for every single ad
             all_ads_rolled = []
             for ad in data['Ad name'].dropna().unique():
                 ad_df = data[data['Ad name'] == ad].groupby('Reporting starts').agg({
@@ -207,17 +217,6 @@ if uploaded_file:
                 combined_df = pd.concat(all_ads_rolled).reset_index()
                 combined_df.rename(columns={'index': 'Date'}, inplace=True)
                 
-                # Define standard Dark Theme formatting for Plotly
-                dark_layout = dict(
-                    plot_bgcolor='black',
-                    paper_bgcolor='black',
-                    font=dict(color='white'),
-                    xaxis=dict(showgrid=True, gridcolor='#333333', title='Date'),
-                    yaxis=dict(showgrid=True, gridcolor='#333333'),
-                    hovermode='x unified',
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                )
-                
                 # Chart 1: Rolling CPA
                 st.markdown("#### Cost Per Acquisition (CPA)")
                 fig_cpa = go.Figure()
@@ -236,7 +235,7 @@ if uploaded_file:
                 fig_cvr.update_layout(yaxis_title="Conversion Rate (%)", **dark_layout)
                 st.plotly_chart(fig_cvr, use_container_width=True)
                 
-                # Chart 3: Rolling Spend (Volume)
+                # Chart 3: Rolling Spend
                 st.markdown("#### Budget Deployment (Spend)")
                 fig_spend = go.Figure()
                 for ad in combined_df['Ad name'].unique():
@@ -246,31 +245,27 @@ if uploaded_file:
                 st.plotly_chart(fig_spend, use_container_width=True)
         
         else:
-            # --- INDIVIDUAL OR OVERALL MODE (White Background) ---
+            # --- INDIVIDUAL OR OVERALL MODE ---
             if selected_rolling_ad == "All Ads (Overall)":
                 df_filtered = data.copy()
             else:
                 df_filtered = data[data['Ad name'] == selected_rolling_ad].copy()
                 
-            # Group by day to create a continuous time series
             daily_df = df_filtered.groupby('Reporting starts').agg({
                 'Amount spent (INR)': 'sum',
                 'Landing page views': 'sum',
                 'Results': 'sum'
             }).reset_index().sort_values('Reporting starts')
             
-            # Reindex to fill missing days with 0 (critical for accurate rolling averages)
             if not daily_df.empty:
                 daily_df.set_index('Reporting starts', inplace=True)
                 idx = pd.date_range(daily_df.index.min(), daily_df.index.max())
                 daily_df = daily_df.reindex(idx, fill_value=0)
                 
-                # Roll absolute values first
                 daily_df['Roll Spend'] = daily_df['Amount spent (INR)'].rolling(window=rolling_window, min_periods=1).sum()
                 daily_df['Roll LPV'] = daily_df['Landing page views'].rolling(window=rolling_window, min_periods=1).sum()
                 daily_df['Roll Purch'] = daily_df['Results'].rolling(window=rolling_window, min_periods=1).sum()
                 
-                # Calculate ratios from the rolled absolute values
                 daily_df['Roll Cost/LPV'] = np.where(daily_df['Roll LPV'] > 0, daily_df['Roll Spend'] / daily_df['Roll LPV'], 0)
                 daily_df['Roll LPV->Purchase %'] = np.where(daily_df['Roll LPV'] > 0, (daily_df['Roll Purch'] / daily_df['Roll LPV']) * 100, 0)
                 daily_df['Roll CPA'] = np.where(daily_df['Roll Purch'] > 0, daily_df['Roll Spend'] / daily_df['Roll Purch'], 0)
@@ -280,7 +275,6 @@ if uploaded_file:
                 st.markdown("---")
                 st.markdown(f"### Current {rolling_window}-Day Rolling Metrics")
                 
-                # Display absolute values alongside ratios
                 kpi1, kpi2, kpi3 = st.columns(3)
                 with kpi1:
                     st.metric("Roll Spend", f"₹{latest_data['Roll Spend']:,.2f}")
@@ -292,38 +286,111 @@ if uploaded_file:
                     st.metric("Roll Purchases (Absolute)", f"{latest_data['Roll Purch']:,.0f}")
                     st.metric("Roll LPV -> Purchase %", f"{latest_data['Roll LPV->Purchase %']:.2f}%")
                 
-                # --- Diagnostic Visualization ---
                 if show_rolling_charts:
                     st.markdown("---")
                     st.markdown(f"### Historical {rolling_window}-Day Efficiency Trajectory")
                     
-                    fig = make_subplots(specs=[[{"secondary_y": True}]])
-                    
-                    fig.add_trace(go.Scatter(
-                        x=daily_df.index,
-                        y=daily_df['Roll CPA'],
-                        mode='lines',
-                        name='Rolling CPA (₹)',
-                        line=dict(color='#0066CC', width=3)
-                    ), secondary_y=False)
-                    
-                    fig.add_trace(go.Scatter(
-                        x=daily_df.index,
-                        y=daily_df['Roll LPV->Purchase %'],
-                        mode='lines',
-                        name='Rolling LPV->Purch %',
-                        line=dict(color='#A0C4FF', width=2, dash='dash')
-                    ), secondary_y=True)
-                    
-                    fig.update_layout(
-                        plot_bgcolor='white',
-                        xaxis=dict(title='Date', showgrid=True, gridcolor='#E0E0E0'),
-                        hovermode='x unified'
-                    )
-                    fig.update_yaxes(title_text="Rolling CPA (INR)", secondary_y=False, showgrid=False)
-                    fig.update_yaxes(title_text="Conversion Rate (%)", secondary_y=True, showgrid=False)
-                    
-                    st.plotly_chart(fig, use_container_width=True)
+                    # Chart 1: Rolling CPA (Dark Theme)
+                    st.markdown("#### Cost Per Acquisition (CPA)")
+                    fig_cpa = go.Figure()
+                    fig_cpa.add_trace(go.Scatter(x=daily_df.index, y=daily_df['Roll CPA'], mode='lines', name='Rolling CPA (₹)', line=dict(color='#0066CC', width=3)))
+                    fig_cpa.update_layout(yaxis_title="Rolling CPA (INR)", **dark_layout)
+                    st.plotly_chart(fig_cpa, use_container_width=True)
 
-else:
-    st.info("Upload your raw Facebook Ads CSV or XLSX in the sidebar to run the diagnostics.")
+                    # Chart 2: Rolling Conversion Rate (Dark Theme)
+                    st.markdown("#### Conversion Rate (LPV -> Purchase)")
+                    fig_cvr = go.Figure()
+                    fig_cvr.add_trace(go.Scatter(x=daily_df.index, y=daily_df['Roll LPV->Purchase %'], mode='lines', name='Rolling LPV->Purch %', line=dict(color='#A0C4FF', width=3)))
+                    fig_cvr.update_layout(yaxis_title="Conversion Rate (%)", **dark_layout)
+                    st.plotly_chart(fig_cvr, use_container_width=True)
+
+                    # Chart 3: Rolling Spend (Dark Theme)
+                    st.markdown("#### Budget Deployment (Spend)")
+                    fig_spend = go.Figure()
+                    fig_spend.add_trace(go.Scatter(x=daily_df.index, y=daily_df['Roll Spend'], mode='lines', name='Rolling Spend (₹)', line=dict(color='#FFFFFF', width=3)))
+                    fig_spend.update_layout(yaxis_title="Rolling Spend (INR)", **dark_layout)
+                    st.plotly_chart(fig_spend, use_container_width=True)
+
+        # --- NEW SECTION: Day of the Week Analysis ---
+        st.markdown("---")
+        st.subheader("📅 Day of the Week Performance Analysis")
+        st.markdown(f"Analyzing data for: **{selected_rolling_ad}**")
+        
+        # Determine master date bounds
+        if selected_rolling_ad == "Compare All Ads":
+            dow_base_df = data.copy()
+        else:
+            dow_base_df = df_filtered.copy()
+
+        if not dow_base_df.empty:
+            min_date = dow_base_df['Reporting starts'].min().date()
+            max_date = dow_base_df['Reporting starts'].max().date()
+            
+            col_d1, col_d2 = st.columns(2)
+            with col_d1:
+                start_date = st.date_input("Start Date", min_date, min_value=min_date, max_value=max_date)
+            with col_d2:
+                end_date = st.date_input("End Date", max_date, min_value=min_date, max_value=max_date)
+                
+            if start_date <= end_date:
+                # Filter by date range
+                mask = (dow_base_df['Reporting starts'].dt.date >= start_date) & (dow_base_df['Reporting starts'].dt.date <= end_date)
+                dow_df = dow_base_df[mask].copy()
+                
+                # Extract day of the week
+                dow_df['Day of Week'] = dow_df['Reporting starts'].dt.day_name()
+                
+                # Aggregate absolute values
+                dow_agg = dow_df.groupby('Day of Week').agg({
+                    'Amount spent (INR)': 'sum',
+                    'Landing page views': 'sum',
+                    'Results': 'sum'
+                }).reset_index()
+                
+                # Ensure correct chronological ordering of days
+                days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                dow_agg['Day of Week'] = pd.Categorical(dow_agg['Day of Week'], categories=days_order, ordered=True)
+                dow_agg = dow_agg.sort_values('Day of Week')
+                
+                # Calculate aggregated ratios
+                dow_agg['CPA (INR)'] = np.where(dow_agg['Results'] > 0, dow_agg['Amount spent (INR)'] / dow_agg['Results'], 0)
+                dow_agg['CVR (%)'] = np.where(dow_agg['Landing page views'] > 0, (dow_agg['Results'] / dow_agg['Landing page views']) * 100, 0)
+                
+                # Display table
+                st.dataframe(
+                    dow_agg.style.format({
+                        'Amount spent (INR)': '₹{:,.2f}',
+                        'Landing page views': '{:,.0f}',
+                        'Results': '{:,.0f}',
+                        'CPA (INR)': '₹{:,.2f}',
+                        'CVR (%)': '{:.2f}%'
+                    }),
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                # Visualizations for Day of the Week (Dark Theme)
+                col_bar1, col_bar2 = st.columns(2)
+                
+                # Adjust dark layout for bar charts (remove x-axis title)
+                bar_layout = dark_layout.copy()
+                bar_layout['xaxis'] = dict(showgrid=False, gridcolor='#333333')
+                
+                with col_bar1:
+                    fig_dow_cpa = go.Figure(data=[
+                        go.Bar(x=dow_agg['Day of Week'], y=dow_agg['CPA (INR)'], marker_color='#0066CC')
+                    ])
+                    fig_dow_cpa.update_layout(title="Average CPA by Day", yaxis_title="CPA (INR)", **bar_layout)
+                    st.plotly_chart(fig_dow_cpa, use_container_width=True)
+                    
+                with col_bar2:
+                    fig_dow_spend = go.Figure(data=[
+                        go.Bar(x=dow_agg['Day of Week'], y=dow_agg['Amount spent (INR)'], marker_color='#A0C4FF')
+                    ])
+                    fig_dow_spend.update_layout(title="Total Spend by Day", yaxis_title="Spend (INR)", **bar_layout)
+                    st.plotly_chart(fig_dow_spend, use_container_width=True)
+            else:
+                st.error("Error: Start Date must be before or equal to End Date.")
+        else:
+            st.warning("No data available for the selected scope.")
+    ```
