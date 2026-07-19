@@ -445,7 +445,9 @@ if uploaded_file:
                     fig_dow_ctr.update_layout(title="Click-Through Rate (CTR)", yaxis_title="CTR (%)", **bar_layout)
                     st.plotly_chart(fig_dow_ctr, use_container_width=True)
                     
-                col_bar4, col_bar5, _ = st.columns(3)
+                
+                # Row 2: Link->LPV, Spend, LPV->Purchase
+                col_bar4, col_bar5, col_bar6 = st.columns(3)
                 with col_bar4:
                     fig_dow_dropoff = go.Figure(data=[go.Bar(x=dow_agg['Day of Week'], y=dow_agg['Link->LPV (%)'], marker_color='#A0C4FF')])
                     fig_dow_dropoff.update_layout(title="Link Click to LPV (%)", yaxis_title="Percentage (%)", **bar_layout)
@@ -454,6 +456,10 @@ if uploaded_file:
                     fig_dow_spend = go.Figure(data=[go.Bar(x=dow_agg['Day of Week'], y=dow_agg['Amount spent (INR)'], marker_color='#FFFFFF')])
                     fig_dow_spend.update_layout(title="Total Spend by Day", yaxis_title="Spend (INR)", **bar_layout)
                     st.plotly_chart(fig_dow_spend, use_container_width=True)
+                with col_bar6:
+                    fig_dow_lpv_purch = go.Figure(data=[go.Bar(x=dow_agg['Day of Week'], y=dow_agg['LPV->Purchase (%)'], marker_color='#32CD32')])
+                    fig_dow_lpv_purch.update_layout(title="LPV -> Purchase (%)", yaxis_title="Percentage (%)", **bar_layout)
+                    st.plotly_chart(fig_dow_lpv_purch, use_container_width=True)
 
                 # --- 2. Static Weekly Matrix ---
                 st.markdown("---")
@@ -517,7 +523,7 @@ if uploaded_file:
                     fig_w_ctr.update_layout(title="Click-Through Rate (CTR) by Week", yaxis_title="CTR (%)", **weekly_bar_layout)
                     st.plotly_chart(fig_w_ctr, use_container_width=True)
                     
-                col_w4, col_w5, _ = st.columns(3)
+                col_w4, col_w5, col_w6 = st.columns(3)
                 with col_w4:
                     fig_w_dropoff = go.Figure(data=[go.Bar(x=week_agg['Week Label'], y=week_agg['Link->LPV (%)'], marker_color='#A0C4FF')])
                     fig_w_dropoff.update_layout(title="Link Click to LPV (%) by Week", yaxis_title="Percentage (%)", **weekly_bar_layout)
@@ -526,6 +532,10 @@ if uploaded_file:
                     fig_w_spend = go.Figure(data=[go.Bar(x=week_agg['Week Label'], y=week_agg['Amount spent (INR)'], marker_color='#FFFFFF')])
                     fig_w_spend.update_layout(title="Total Spend by Week", yaxis_title="Spend (INR)", **weekly_bar_layout)
                     st.plotly_chart(fig_w_spend, use_container_width=True)
+                with col_w6:
+                    fig_w_lpv_purch = go.Figure(data=[go.Bar(x=week_agg['Week Label'], y=week_agg['LPV->Purchase (%)'], marker_color='#32CD32')])
+                    fig_w_lpv_purch.update_layout(title="LPV -> Purchase (%) by Week", yaxis_title="Percentage (%)", **weekly_bar_layout)
+                    st.plotly_chart(fig_w_lpv_purch, use_container_width=True)
 
             # --- 3. Rolling DOW Trends (Weighted Average of Last N specific days) ---
             st.markdown("---")
