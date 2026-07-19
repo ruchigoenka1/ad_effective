@@ -165,6 +165,7 @@ if uploaded_file:
     # --- Tab 5: Rolling Diagnostics ---
     # --- Tab 5: Rolling Diagnostics ---
     # --- Tab 5: Rolling Diagnostics ---
+    # --- Tab 5: Rolling Diagnostics ---
     with tab5:
         st.subheader("Dynamic Rolling Weighted Averages")
         
@@ -173,7 +174,7 @@ if uploaded_file:
             ad_options = ["Compare All Ads", "All Ads (Overall)"] + data['Ad name'].dropna().unique().tolist()
             selected_rolling_ad = st.selectbox("Select Ad/Scope:", options=ad_options, key="rolling_ad_select")
         with col_ctrl2:
-            rolling_window = st.number_input("Rolling Window (Days)", min_value=1, max_value=90, value=7, step=1)
+            rolling_window = st.number_input("Daily Rolling Window (Days)", min_value=1, max_value=90, value=7, step=1)
 
         # Define the Dark Theme layout to be reused across all charts in this tab
         dark_layout = dict(
@@ -309,7 +310,7 @@ if uploaded_file:
                     fig_spend.update_layout(yaxis_title="Rolling Spend (INR)", **dark_layout)
                     st.plotly_chart(fig_spend, use_container_width=True)
 
-        # --- NEW SECTION: Day of the Week Analysis ---
+        # --- SECTION: Day of the Week Analysis ---
         st.markdown("---")
         st.subheader("📅 Day of the Week Performance Analysis")
         st.markdown(f"Analyzing data for: **{selected_rolling_ad}**")
@@ -330,6 +331,8 @@ if uploaded_file:
             min_date = dow_base_df['Reporting starts'].min().date()
             max_date = dow_base_df['Reporting starts'].max().date()
             
+            # --- 1. Static DOW Matrix (Overall Date Range) ---
+            st.markdown("#### Absolute Date-Range Aggregation")
             col_d1, col_d2 = st.columns(2)
             with col_d1:
                 start_date = st.date_input("Start Date", min_date, min_value=min_date, max_value=max_date)
@@ -357,61 +360,111 @@ if uploaded_file:
                 
                 # Calculate derived ratios
                 dow_agg['CTR (%)'] = np.where(dow_agg['Impressions'] > 0, (dow_agg['Link clicks'] / dow_agg['Impressions']) * 100, 0)
-                dow_agg['CPC (INR)'] = np.where(dow_agg['Link clicks'] > 0, dow_agg['Amount spent (INR)'] / dow_agg['Link clicks'], 0)
-                dow_agg['Link->LPV (%)'] = np.where(dow_agg['Link clicks'] > 0, (dow_agg['Landing page views'] / dow_agg['Link clicks']) * 100, 0)
                 dow_agg['Cost/LPV (INR)'] = np.where(dow_agg['Landing page views'] > 0, dow_agg['Amount spent (INR)'] / dow_agg['Landing page views'], 0)
+                dow_agg['Link->LPV (%)'] = np.where(dow_agg['Link clicks'] > 0, (dow_agg['Landing page views'] / dow_agg['Link clicks']) * 100, 0)
                 dow_agg['CPA (INR)'] = np.where(dow_agg['Results'] > 0, dow_agg['Amount spent (INR)'] / dow_agg['Results'], 0)
-                dow_agg['CVR (%)'] = np.where(dow_agg['Landing page views'] > 0, (dow_agg['Results'] / dow_agg['Landing page views']) * 100, 0)
                 
-                # Dataframe showing both Absolute values and Ratios
-                st.dataframe(
-                    dow_agg.style.format({
-                        'Amount spent (INR)': '₹{:,.2f}',
-                        'Impressions': '{:,.0f}',
-                        'Link clicks': '{:,.0f}',
-                        'Landing page views': '{:,.0f}',
-                        'Results': '{:,.0f}',
-                        'CTR (%)': '{:.2f}%',
-                        'CPC (INR)': '₹{:,.2f}',
-                        'Link->LPV (%)': '{:.2f}%',
-                        'Cost/LPV (INR)': '₹{:,.2f}',
-                        'CPA (INR)': '₹{:,.2f}',
-                        'CVR (%)': '{:.2f}%'
-                    }),
-                    use_container_width=True,
-                    hide_index=True
-                )
-                
-                # Visualizations
-                col_bar1, col_bar2, col_bar3 = st.columns(3)
-                
+                # Visualizations Matrix for Static DOW
                 bar_layout = dark_layout.copy()
                 bar_layout['xaxis'] = dict(showgrid=False, gridcolor='#333333')
                 
+                # Row 1: CPA, Cost/LPV, CTR
+                col_bar1, col_bar2, col_bar3 = st.columns(3)
                 with col_bar1:
-                    fig_dow_cpa = go.Figure(data=[
-                        go.Bar(x=dow_agg['Day of Week'], y=dow_agg['CPA (INR)'], marker_color='#0066CC')
-                    ])
+                    fig_dow_cpa = go.Figure(data=[go.Bar(x=dow_agg['Day of Week'], y=dow_agg['CPA (INR)'], marker_color='#FF4B4B')])
                     fig_dow_cpa.update_layout(title="Average CPA by Day", yaxis_title="CPA (INR)", **bar_layout)
                     st.plotly_chart(fig_dow_cpa, use_container_width=True)
-                    
                 with col_bar2:
-                    fig_dow_dropoff = go.Figure(data=[
-                        go.Bar(x=dow_agg['Day of Week'], y=dow_agg['Link->LPV (%)'], marker_color='#A0C4FF')
-                    ])
+                    fig_dow_cplpv = go.Figure(data=[go.Bar(x=dow_agg['Day of Week'], y=dow_agg['Cost/LPV (INR)'], marker_color='#FFA500')])
+                    fig_dow_cplpv.update_layout(title="Cost per LPV by Day", yaxis_title="Cost (INR)", **bar_layout)
+                    st.plotly_chart(fig_dow_cplpv, use_container_width=True)
+                with col_bar3:
+                    fig_dow_ctr = go.Figure(data=[go.Bar(x=dow_agg['Day of Week'], y=dow_agg['CTR (%)'], marker_color='#0088CC')])
+                    fig_dow_ctr.update_layout(title="Click-Through Rate (CTR)", yaxis_title="CTR (%)", **bar_layout)
+                    st.plotly_chart(fig_dow_ctr, use_container_width=True)
+                    
+                # Row 2: Link->LPV, Spend
+                col_bar4, col_bar5, _ = st.columns(3)
+                with col_bar4:
+                    fig_dow_dropoff = go.Figure(data=[go.Bar(x=dow_agg['Day of Week'], y=dow_agg['Link->LPV (%)'], marker_color='#A0C4FF')])
                     fig_dow_dropoff.update_layout(title="Link Click to LPV (%)", yaxis_title="Percentage (%)", **bar_layout)
                     st.plotly_chart(fig_dow_dropoff, use_container_width=True)
-
-                with col_bar3:
-                    fig_dow_spend = go.Figure(data=[
-                        go.Bar(x=dow_agg['Day of Week'], y=dow_agg['Amount spent (INR)'], marker_color='#FFFFFF')
-                    ])
+                with col_bar5:
+                    fig_dow_spend = go.Figure(data=[go.Bar(x=dow_agg['Day of Week'], y=dow_agg['Amount spent (INR)'], marker_color='#FFFFFF')])
                     fig_dow_spend.update_layout(title="Total Spend by Day", yaxis_title="Spend (INR)", **bar_layout)
                     st.plotly_chart(fig_dow_spend, use_container_width=True)
-            else:
-                st.error("Error: Start Date must be before or equal to End Date.")
+
+            # --- 2. Rolling DOW Trends (Weighted Average of Last N specific days) ---
+            st.markdown("---")
+            st.markdown("#### 🔄 Rolling Day-of-the-Week Trends")
+            st.markdown("*(e.g., The weighted average of the last 7 Tuesdays)*")
+            
+            col_roll1, col_roll2 = st.columns(2)
+            with col_roll1:
+                dow_roll_window = st.number_input("DOW Lookback Window (Weeks)", min_value=1, max_value=24, value=7, step=1)
+            with col_roll2:
+                metric_to_plot = st.selectbox(
+                    "Select Metric to Plot Over Time:", 
+                    ["Rolling CPA", "Rolling Cost/LPV", "Rolling CTR (%)"]
+                )
+
+            # Group daily base data
+            daily_dow_df = dow_base_df.groupby('Reporting starts').agg({
+                'Amount spent (INR)': 'sum',
+                'Impressions': 'sum',
+                'Link clicks': 'sum',
+                'Landing page views': 'sum',
+                'Results': 'sum'
+            }).reset_index().sort_values('Reporting starts')
+            
+            daily_dow_df['Day of Week'] = daily_dow_df['Reporting starts'].dt.day_name()
+            
+            # Calculate rolling metrics isolating each Day of the Week
+            rolled_dow_list = []
+            for day, group in daily_dow_df.groupby('Day of Week'):
+                group = group.sort_values('Reporting starts')
+                # Roll absolute physicals
+                group['Roll Spend'] = group['Amount spent (INR)'].rolling(window=dow_roll_window, min_periods=1).sum()
+                group['Roll Imp'] = group['Impressions'].rolling(window=dow_roll_window, min_periods=1).sum()
+                group['Roll Clicks'] = group['Link clicks'].rolling(window=dow_roll_window, min_periods=1).sum()
+                group['Roll LPV'] = group['Landing page views'].rolling(window=dow_roll_window, min_periods=1).sum()
+                group['Roll Purch'] = group['Results'].rolling(window=dow_roll_window, min_periods=1).sum()
+                
+                # Calculate weighted ratios
+                group['Rolling CPA'] = np.where(group['Roll Purch'] > 0, group['Roll Spend'] / group['Roll Purch'], 0)
+                group['Rolling Cost/LPV'] = np.where(group['Roll LPV'] > 0, group['Roll Spend'] / group['Roll LPV'], 0)
+                group['Rolling CTR (%)'] = np.where(group['Roll Imp'] > 0, (group['Roll Clicks'] / group['Roll Imp']) * 100, 0)
+                
+                rolled_dow_list.append(group)
+                
+            trend_dow_df = pd.concat(rolled_dow_list)
+            
+            # Plot the multi-line chart
+            fig_dow_trend = go.Figure()
+            colors = {
+                'Monday': '#1f77b4', 'Tuesday': '#ff7f0e', 'Wednesday': '#2ca02c', 
+                'Thursday': '#d62728', 'Friday': '#9467bd', 'Saturday': '#8c564b', 'Sunday': '#e377c2'
+            }
+            
+            for day in days_order:
+                day_data = trend_dow_df[trend_dow_df['Day of Week'] == day]
+                if not day_data.empty:
+                    fig_dow_trend.add_trace(go.Scatter(
+                        x=day_data['Reporting starts'], 
+                        y=day_data[metric_to_plot], 
+                        mode='lines+markers', 
+                        name=day,
+                        line=dict(color=colors.get(day, '#FFFFFF'), width=2)
+                    ))
+            
+            fig_dow_trend.update_layout(
+                title=f"{dow_roll_window}-Week Rolling Trend for {metric_to_plot}",
+                yaxis_title=metric_to_plot,
+                **dark_layout
+            )
+            st.plotly_chart(fig_dow_trend, use_container_width=True)
+
         else:
             st.warning("No data available for the selected scope.")
-            
 else:
     st.info("Upload your raw Facebook Ads CSV or XLSX in the sidebar to run the diagnostics.")
