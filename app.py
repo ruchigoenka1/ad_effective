@@ -694,13 +694,28 @@ if uploaded_file:
                     # --- NEW: Dayparting Heatmap ---
                     st.markdown("---")
                     st.markdown("#### 🕒 Dayparting Heatmap (Day of Week vs. Hour)")
+                    
+                    # Display Total Conversions for the selected timeframe
+                    total_conversions = filtered_time_df['Results'].sum()
+                    st.markdown(f"**Total Conversions (Selected Scope & Dates):** `{total_conversions:,.0f}`")
                     st.caption("Identify exact recurring weekly schedule windows where ad efficiency peaks or leaks.")
                     
-                    heatmap_metric = st.selectbox(
+                    heatmap_metric_label = st.selectbox(
                         "Select Metric for Heatmap:", 
-                        ["CPA (INR)", "Amount spent (INR)", "CTR (%)", "LPV->Purchase (%)", "Link->LPV (%)"],
+                        ["CPA (INR)", "Amount spent (INR)", "Conversions (Results)", "CTR (%)", "LPV->Purchase (%)", "Link->LPV (%)"],
                         key="heatmap_metric_select"
                     )
+
+                    # Map the user-friendly label to the backend dataframe column
+                    metric_map = {
+                        "CPA (INR)": "CPA (INR)",
+                        "Amount spent (INR)": "Amount spent (INR)",
+                        "Conversions (Results)": "Results_Heatmap", 
+                        "CTR (%)": "CTR (%)",
+                        "LPV->Purchase (%)": "LPV->Purchase (%)",
+                        "Link->LPV (%)": "Link->LPV (%)"
+                    }
+                    target_metric = metric_map[heatmap_metric_label]
 
                     # Group by both Day of Week and Time Block to build the grid
                     heat_df = filtered_time_df.groupby(['Day of Week', 'Time Block']).agg({
@@ -711,22 +726,24 @@ if uploaded_file:
                         'Results': 'sum'
                     }).reset_index()
                     
-                    # Calculate diagnostic ratios for the grid
-                    heat_df['CTR (%)'] = np.where(heat_df['Impressions'] > 0, (heat_df['Link clicks'] / heat_df['Impressions']) * 100, 0)
-                    heat_df['Link->LPV (%)'] = np.where(heat_df['Link clicks'] > 0, (heat_df['Landing page views'] / heat_df['Link clicks']) * 100, 0)
-                    heat_df['LPV->Purchase (%)'] = np.where(heat_df['Landing page views'] > 0, (heat_df['Results'] / heat_df['Landing page views']) * 100, 0)
-                    # Replaces misleading 0s with NaNs so they show as blank gaps on the heatmap
+                    # Calculate diagnostic ratios for the grid (using np.nan for 0s to keep gaps white)
+                    heat_df['CTR (%)'] = np.where(heat_df['Impressions'] > 0, (heat_df['Link clicks'] / heat_df['Impressions']) * 100, np.nan)
+                    heat_df['Link->LPV (%)'] = np.where(heat_df['Link clicks'] > 0, (heat_df['Landing page views'] / heat_df['Link clicks']) * 100, np.nan)
+                    heat_df['LPV->Purchase (%)'] = np.where(heat_df['Landing page views'] > 0, (heat_df['Results'] / heat_df['Landing page views']) * 100, np.nan)
+                    
+                    # CPA and Conversions logic: np.nan instead of 0 to create white gaps
                     heat_df['CPA (INR)'] = np.where(heat_df['Results'] > 0, heat_df['Amount spent (INR)'] / heat_df['Results'], np.nan)
+                    heat_df['Results_Heatmap'] = np.where(heat_df['Results'] > 0, heat_df['Results'], np.nan)
                     
-                    # Create the Pivot Table
-                    pivot_df = heat_df.pivot(index='Day of Week', columns='Time Block', values=heatmap_metric)
+                    # Create the Pivot Table WITHOUT .fillna(0)
+                    pivot_df = heat_df.pivot(index='Day of Week', columns='Time Block', values=target_metric)
                     
-                    # Reorder Days Chronologically (Plotly charts bottom-up, so reversing puts Monday at the top)
+                    # Reorder Days Chronologically
                     days_order_heat = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
                     pivot_df = pivot_df.reindex(days_order_heat)
                     
                     # 1. Clean the text display so 'nan' is replaced with an empty string
-                    if "INR" in heatmap_metric:
+                    if "INR" in target_metric or target_metric == "Results_Heatmap":
                         text_display = [[f"{val:,.0f}" if pd.notnull(val) else "" for val in row] for row in pivot_df.values]
                     else:
                         text_display = [[f"{val:.1f}%" if pd.notnull(val) else "" for val in row] for row in pivot_df.values]
@@ -745,12 +762,12 @@ if uploaded_file:
                     
                     # 3. The trick to white NaN blocks: Set the plot area background to white
                     heat_layout = dark_layout.copy()
-                    heat_layout['plot_bgcolor'] = '#FFFFFF'  # White background shines through transparent NaNs
+                    heat_layout['plot_bgcolor'] = '#FFFFFF'  
                     heat_layout['xaxis'] = dict(showgrid=False, title="Hour of Day", tickangle=45)
                     heat_layout['yaxis'] = dict(showgrid=False, title="Day of Week", autorange="reversed") 
                     
                     fig_heat.update_layout(
-                        title=f"Recurring Weekly Schedule Map: {heatmap_metric}", 
+                        title=f"Recurring Weekly Schedule Map: {heatmap_metric_label}", 
                         height=500,
                         **heat_layout
                     )
