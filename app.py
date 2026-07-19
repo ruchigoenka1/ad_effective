@@ -715,7 +715,8 @@ if uploaded_file:
                     heat_df['CTR (%)'] = np.where(heat_df['Impressions'] > 0, (heat_df['Link clicks'] / heat_df['Impressions']) * 100, 0)
                     heat_df['Link->LPV (%)'] = np.where(heat_df['Link clicks'] > 0, (heat_df['Landing page views'] / heat_df['Link clicks']) * 100, 0)
                     heat_df['LPV->Purchase (%)'] = np.where(heat_df['Landing page views'] > 0, (heat_df['Results'] / heat_df['Landing page views']) * 100, 0)
-                    heat_df['CPA (INR)'] = np.where(heat_df['Results'] > 0, heat_df['Amount spent (INR)'] / heat_df['Results'], 0)
+                    # Replaces misleading 0s with NaNs so they show as blank gaps on the heatmap
+                    heat_df['CPA (INR)'] = np.where(heat_df['Results'] > 0, heat_df['Amount spent (INR)'] / heat_df['Results'], np.nan)
                     
                     # Create the Pivot Table
                     pivot_df = heat_df.pivot(index='Day of Week', columns='Time Block', values=heatmap_metric).fillna(0)
