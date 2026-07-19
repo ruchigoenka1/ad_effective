@@ -719,7 +719,7 @@ if uploaded_file:
                     heat_df['CPA (INR)'] = np.where(heat_df['Results'] > 0, heat_df['Amount spent (INR)'] / heat_df['Results'], np.nan)
                     
                     # Create the Pivot Table
-                    pivot_df = heat_df.pivot(index='Day of Week', columns='Time Block', values=heatmap_metric).fillna(0)
+                    pivot_df = heat_df.pivot(index='Day of Week', columns='Time Block', values=heatmap_metric)
                     
                     # Reorder Days Chronologically (Plotly charts bottom-up, so reversing puts Monday at the top)
                     days_order_heat = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
