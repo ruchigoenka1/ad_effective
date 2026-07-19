@@ -168,6 +168,7 @@ if uploaded_file:
     # --- Tab 5: Rolling Diagnostics ---
     # --- Tab 5: Rolling Diagnostics ---
     # --- Tab 5: Rolling Diagnostics ---
+    # --- Tab 5: Rolling Diagnostics ---
     with tab5:
         st.subheader("Dynamic Rolling Weighted Averages")
         
@@ -259,7 +260,7 @@ if uploaded_file:
                 for ad in combined_df['Ad name'].unique():
                     ad_data = combined_df[combined_df['Ad name'] == ad]
                     fig_cvr.add_trace(go.Scatter(x=ad_data['Date'], y=ad_data['Roll LPV->Purchase %'], mode='lines', name=ad))
-                fig_cvr.update_layout(yaxis_title="Conversion Rate (%)", **dark_layout)
+                fig_cvr.update_layout(yaxis_title="LPV -> Purchase (%)", **dark_layout)
                 st.plotly_chart(fig_cvr, use_container_width=True)
                 
                 # Chart 3: Rolling Spend
@@ -332,26 +333,27 @@ if uploaded_file:
                     use_container_width=True
                 )
                 
-                st.markdown("---")
-                st.markdown(f"### Historical {rolling_window}-Day Efficiency Trajectory")
-                
-                st.markdown("#### Cost Per Acquisition (CPA)")
-                fig_cpa = go.Figure()
-                fig_cpa.add_trace(go.Scatter(x=daily_df.index, y=daily_df['Roll CPA'], mode='lines', name='Rolling CPA (₹)', line=dict(color='#0066CC', width=3)))
-                fig_cpa.update_layout(yaxis_title="Rolling CPA (INR)", **dark_layout)
-                st.plotly_chart(fig_cpa, use_container_width=True)
+                if show_rolling_charts:
+                    st.markdown("---")
+                    st.markdown(f"### Historical {rolling_window}-Day Efficiency Trajectory")
+                    
+                    st.markdown("#### Cost Per Acquisition (CPA)")
+                    fig_cpa = go.Figure()
+                    fig_cpa.add_trace(go.Scatter(x=daily_df.index, y=daily_df['Roll CPA'], mode='lines', name='Rolling CPA (₹)', line=dict(color='#0066CC', width=3)))
+                    fig_cpa.update_layout(yaxis_title="Rolling CPA (INR)", **dark_layout)
+                    st.plotly_chart(fig_cpa, use_container_width=True)
 
-                st.markdown("#### Conversion Rate (LPV -> Purchase)")
-                fig_cvr = go.Figure()
-                fig_cvr.add_trace(go.Scatter(x=daily_df.index, y=daily_df['Roll LPV->Purchase %'], mode='lines', name='Rolling LPV->Purch %', line=dict(color='#A0C4FF', width=3)))
-                fig_cvr.update_layout(yaxis_title="Conversion Rate (%)", **dark_layout)
-                st.plotly_chart(fig_cvr, use_container_width=True)
+                    st.markdown("#### Conversion Rate (LPV -> Purchase)")
+                    fig_cvr = go.Figure()
+                    fig_cvr.add_trace(go.Scatter(x=daily_df.index, y=daily_df['Roll LPV->Purchase %'], mode='lines', name='Rolling LPV->Purch %', line=dict(color='#A0C4FF', width=3)))
+                    fig_cvr.update_layout(yaxis_title="LPV -> Purchase (%)", **dark_layout)
+                    st.plotly_chart(fig_cvr, use_container_width=True)
 
-                st.markdown("#### Budget Deployment (Spend)")
-                fig_spend = go.Figure()
-                fig_spend.add_trace(go.Scatter(x=daily_df.index, y=daily_df['Roll Spend'], mode='lines', name='Rolling Spend (₹)', line=dict(color='#FFFFFF', width=3)))
-                fig_spend.update_layout(yaxis_title="Rolling Spend (INR)", **dark_layout)
-                st.plotly_chart(fig_spend, use_container_width=True)
+                    st.markdown("#### Budget Deployment (Spend)")
+                    fig_spend = go.Figure()
+                    fig_spend.add_trace(go.Scatter(x=daily_df.index, y=daily_df['Roll Spend'], mode='lines', name='Rolling Spend (₹)', line=dict(color='#FFFFFF', width=3)))
+                    fig_spend.update_layout(yaxis_title="Rolling Spend (INR)", **dark_layout)
+                    st.plotly_chart(fig_spend, use_container_width=True)
 
         # --- SECTION: Performance Analysis (DOW & Weekly) ---
         st.markdown("---")
@@ -404,6 +406,7 @@ if uploaded_file:
                 dow_agg['CTR (%)'] = np.where(dow_agg['Impressions'] > 0, (dow_agg['Link clicks'] / dow_agg['Impressions']) * 100, 0)
                 dow_agg['Cost/LPV (INR)'] = np.where(dow_agg['Landing page views'] > 0, dow_agg['Amount spent (INR)'] / dow_agg['Landing page views'], 0)
                 dow_agg['Link->LPV (%)'] = np.where(dow_agg['Link clicks'] > 0, (dow_agg['Landing page views'] / dow_agg['Link clicks']) * 100, 0)
+                dow_agg['LPV->Purchase (%)'] = np.where(dow_agg['Landing page views'] > 0, (dow_agg['Results'] / dow_agg['Landing page views']) * 100, 0)
                 dow_agg['CPA (INR)'] = np.where(dow_agg['Results'] > 0, dow_agg['Amount spent (INR)'] / dow_agg['Results'], 0)
                 
                 # Display DOW Table
@@ -418,6 +421,7 @@ if uploaded_file:
                             'CTR (%)': '{:.2f}%',
                             'Cost/LPV (INR)': '₹{:,.2f}',
                             'Link->LPV (%)': '{:.2f}%',
+                            'LPV->Purchase (%)': '{:.2f}%',
                             'CPA (INR)': '₹{:,.2f}'
                         }),
                         use_container_width=True,
@@ -471,6 +475,7 @@ if uploaded_file:
                 week_agg['CTR (%)'] = np.where(week_agg['Impressions'] > 0, (week_agg['Link clicks'] / week_agg['Impressions']) * 100, 0)
                 week_agg['Cost/LPV (INR)'] = np.where(week_agg['Landing page views'] > 0, week_agg['Amount spent (INR)'] / week_agg['Landing page views'], 0)
                 week_agg['Link->LPV (%)'] = np.where(week_agg['Link clicks'] > 0, (week_agg['Landing page views'] / week_agg['Link clicks']) * 100, 0)
+                week_agg['LPV->Purchase (%)'] = np.where(week_agg['Landing page views'] > 0, (week_agg['Results'] / week_agg['Landing page views']) * 100, 0)
                 week_agg['CPA (INR)'] = np.where(week_agg['Results'] > 0, week_agg['Amount spent (INR)'] / week_agg['Results'], 0)
                 
                 # Format dates for plotting and tables
@@ -479,7 +484,7 @@ if uploaded_file:
                 # Display Weekly Table
                 with st.expander("Show Raw Data Table (Weekly Breakdown)"):
                     st.dataframe(
-                        week_agg[['Week Label', 'Amount spent (INR)', 'Impressions', 'Link clicks', 'Landing page views', 'Results', 'CTR (%)', 'Cost/LPV (INR)', 'Link->LPV (%)', 'CPA (INR)']].style.format({
+                        week_agg[['Week Label', 'Amount spent (INR)', 'Impressions', 'Link clicks', 'Landing page views', 'Results', 'CTR (%)', 'Cost/LPV (INR)', 'Link->LPV (%)', 'LPV->Purchase (%)', 'CPA (INR)']].style.format({
                             'Amount spent (INR)': '₹{:,.2f}',
                             'Impressions': '{:,.0f}',
                             'Link clicks': '{:,.0f}',
@@ -488,6 +493,7 @@ if uploaded_file:
                             'CTR (%)': '{:.2f}%',
                             'Cost/LPV (INR)': '₹{:,.2f}',
                             'Link->LPV (%)': '{:.2f}%',
+                            'LPV->Purchase (%)': '{:.2f}%',
                             'CPA (INR)': '₹{:,.2f}'
                         }),
                         use_container_width=True,
@@ -532,7 +538,7 @@ if uploaded_file:
             with col_roll2:
                 metric_to_plot = st.selectbox(
                     "Select Metric to Plot Over Time:", 
-                    ["Rolling CPA", "Rolling Cost/LPV", "Rolling CTR (%)"]
+                    ["Rolling CPA", "Rolling Cost/LPV", "Rolling CTR (%)", "Rolling LPV->Purchase (%)"]
                 )
 
             daily_dow_df = time_base_df.groupby('Reporting starts').agg({
@@ -558,6 +564,7 @@ if uploaded_file:
                 group['Rolling CPA'] = np.where(group['Roll Purch'] > 0, group['Roll Spend'] / group['Roll Purch'], 0)
                 group['Rolling Cost/LPV'] = np.where(group['Roll LPV'] > 0, group['Roll Spend'] / group['Roll LPV'], 0)
                 group['Rolling CTR (%)'] = np.where(group['Roll Imp'] > 0, (group['Roll Clicks'] / group['Roll Imp']) * 100, 0)
+                group['Rolling LPV->Purchase (%)'] = np.where(group['Roll LPV'] > 0, (group['Roll Purch'] / group['Roll LPV']) * 100, 0)
                 
                 rolled_dow_list.append(group)
                 
@@ -589,6 +596,7 @@ if uploaded_file:
 
         else:
             st.warning("No data available for the selected scope.")
+
 
 else:
     st.info("Upload your raw Facebook Ads CSV or XLSX in the sidebar to run the diagnostics.")
