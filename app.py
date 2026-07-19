@@ -166,6 +166,7 @@ if uploaded_file:
     # --- Tab 5: Rolling Diagnostics ---
     # --- Tab 5: Rolling Diagnostics ---
     # --- Tab 5: Rolling Diagnostics ---
+    # --- Tab 5: Rolling Diagnostics ---
     with tab5:
         st.subheader("Dynamic Rolling Weighted Averages")
         
@@ -211,6 +212,7 @@ if uploaded_file:
                     
                     ad_df['Roll CPA'] = np.where(ad_df['Roll Purch'] > 0, ad_df['Roll Spend'] / ad_df['Roll Purch'], 0)
                     ad_df['Roll LPV->Purchase %'] = np.where(ad_df['Roll LPV'] > 0, (ad_df['Roll Purch'] / ad_df['Roll LPV']) * 100, 0)
+                    ad_df['Roll Cost/LPV'] = np.where(ad_df['Roll LPV'] > 0, ad_df['Roll Spend'] / ad_df['Roll LPV'], 0)
                     
                     ad_df['Ad name'] = ad
                     all_ads_rolled.append(ad_df)
@@ -218,6 +220,28 @@ if uploaded_file:
             if all_ads_rolled:
                 combined_df = pd.concat(all_ads_rolled).reset_index()
                 combined_df.rename(columns={'index': 'Date'}, inplace=True)
+                
+                # --- Tabular Data Audit for Comparison ---
+                st.markdown(f"### 📋 {rolling_window}-Day Rolling Data Log (All Ads)")
+                
+                display_combined_df = combined_df[['Date', 'Ad name', 'Roll Spend', 'Roll LPV', 'Roll Purch', 'Roll Cost/LPV', 'Roll LPV->Purchase %', 'Roll CPA']].copy()
+                display_combined_df = display_combined_df.sort_values(by=['Date', 'Ad name'], ascending=[False, True])
+                
+                st.dataframe(
+                    display_combined_df.style.format({
+                        'Date': lambda t: t.strftime('%Y-%m-%d'),
+                        'Roll Spend': '₹{:,.2f}',
+                        'Roll LPV': '{:,.0f}',
+                        'Roll Purch': '{:,.0f}',
+                        'Roll Cost/LPV': '₹{:,.2f}',
+                        'Roll LPV->Purchase %': '{:.2f}%',
+                        'Roll CPA': '₹{:,.2f}'
+                    }),
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                st.markdown("---")
                 
                 # Chart 1: Rolling CPA
                 st.markdown("#### Cost Per Acquisition (CPA)")
@@ -287,6 +311,25 @@ if uploaded_file:
                 with kpi3:
                     st.metric("Roll Purchases (Absolute)", f"{latest_data['Roll Purch']:,.0f}")
                     st.metric("Roll LPV -> Purchase %", f"{latest_data['Roll LPV->Purchase %']:.2f}%")
+
+                # --- Tabular Data Audit ---
+                st.markdown("---")
+                st.markdown(f"### 📋 {rolling_window}-Day Rolling Data Log")
+                
+                display_df = daily_df[['Roll Spend', 'Roll LPV', 'Roll Purch', 'Roll Cost/LPV', 'Roll LPV->Purchase %', 'Roll CPA']].copy()
+                display_df = display_df.sort_index(ascending=False) 
+                
+                st.dataframe(
+                    display_df.style.format({
+                        'Roll Spend': '₹{:,.2f}',
+                        'Roll LPV': '{:,.0f}',
+                        'Roll Purch': '{:,.0f}',
+                        'Roll Cost/LPV': '₹{:,.2f}',
+                        'Roll LPV->Purchase %': '{:.2f}%',
+                        'Roll CPA': '₹{:,.2f}'
+                    }),
+                    use_container_width=True
+                )
                 
                 if show_rolling_charts:
                     st.markdown("---")
@@ -345,7 +388,6 @@ if uploaded_file:
                 
                 dow_df['Day of Week'] = dow_df['Reporting starts'].dt.day_name()
                 
-                # Aggregate absolute physical values first
                 dow_agg = dow_df.groupby('Day of Week').agg({
                     'Amount spent (INR)': 'sum',
                     'Impressions': 'sum',
@@ -358,13 +400,11 @@ if uploaded_file:
                 dow_agg['Day of Week'] = pd.Categorical(dow_agg['Day of Week'], categories=days_order, ordered=True)
                 dow_agg = dow_agg.sort_values('Day of Week')
                 
-                # Calculate derived ratios
                 dow_agg['CTR (%)'] = np.where(dow_agg['Impressions'] > 0, (dow_agg['Link clicks'] / dow_agg['Impressions']) * 100, 0)
                 dow_agg['Cost/LPV (INR)'] = np.where(dow_agg['Landing page views'] > 0, dow_agg['Amount spent (INR)'] / dow_agg['Landing page views'], 0)
                 dow_agg['Link->LPV (%)'] = np.where(dow_agg['Link clicks'] > 0, (dow_agg['Landing page views'] / dow_agg['Link clicks']) * 100, 0)
                 dow_agg['CPA (INR)'] = np.where(dow_agg['Results'] > 0, dow_agg['Amount spent (INR)'] / dow_agg['Results'], 0)
                 
-                # Visualizations Matrix for Static DOW
                 bar_layout = dark_layout.copy()
                 bar_layout['xaxis'] = dict(showgrid=False, gridcolor='#333333')
                 
@@ -408,7 +448,6 @@ if uploaded_file:
                     ["Rolling CPA", "Rolling Cost/LPV", "Rolling CTR (%)"]
                 )
 
-            # Group daily base data
             daily_dow_df = dow_base_df.groupby('Reporting starts').agg({
                 'Amount spent (INR)': 'sum',
                 'Impressions': 'sum',
@@ -419,18 +458,16 @@ if uploaded_file:
             
             daily_dow_df['Day of Week'] = daily_dow_df['Reporting starts'].dt.day_name()
             
-            # Calculate rolling metrics isolating each Day of the Week
             rolled_dow_list = []
             for day, group in daily_dow_df.groupby('Day of Week'):
                 group = group.sort_values('Reporting starts')
-                # Roll absolute physicals
+                
                 group['Roll Spend'] = group['Amount spent (INR)'].rolling(window=dow_roll_window, min_periods=1).sum()
                 group['Roll Imp'] = group['Impressions'].rolling(window=dow_roll_window, min_periods=1).sum()
                 group['Roll Clicks'] = group['Link clicks'].rolling(window=dow_roll_window, min_periods=1).sum()
                 group['Roll LPV'] = group['Landing page views'].rolling(window=dow_roll_window, min_periods=1).sum()
                 group['Roll Purch'] = group['Results'].rolling(window=dow_roll_window, min_periods=1).sum()
                 
-                # Calculate weighted ratios
                 group['Rolling CPA'] = np.where(group['Roll Purch'] > 0, group['Roll Spend'] / group['Roll Purch'], 0)
                 group['Rolling Cost/LPV'] = np.where(group['Roll LPV'] > 0, group['Roll Spend'] / group['Roll LPV'], 0)
                 group['Rolling CTR (%)'] = np.where(group['Roll Imp'] > 0, (group['Roll Clicks'] / group['Roll Imp']) * 100, 0)
@@ -439,7 +476,6 @@ if uploaded_file:
                 
             trend_dow_df = pd.concat(rolled_dow_list)
             
-            # Plot the multi-line chart
             fig_dow_trend = go.Figure()
             colors = {
                 'Monday': '#1f77b4', 'Tuesday': '#ff7f0e', 'Wednesday': '#2ca02c', 
@@ -466,5 +502,7 @@ if uploaded_file:
 
         else:
             st.warning("No data available for the selected scope.")
+        
+
 else:
     st.info("Upload your raw Facebook Ads CSV or XLSX in the sidebar to run the diagnostics.")
