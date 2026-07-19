@@ -32,7 +32,7 @@ st.set_page_config(page_title="Ad Strategy Optimizer", layout="wide")
 #     return df
 
 
-# --- Helper Functions ---
+# --- Updated Helper Function ---
 @st.cache_data
 def load_and_clean_data(file):
     # Support both CSV and XLSX
@@ -41,22 +41,27 @@ def load_and_clean_data(file):
     else:
         df = pd.read_excel(file)
     
-    # Standardize column types based on FB export
-    df['Reporting starts'] = pd.to_datetime(df['Reporting starts'])
+    # 1. Force explicit datetime conversion and normalize to day (strip hours/minutes)
+    df['Reporting starts'] = pd.to_datetime(df['Reporting starts']).dt.normalize()
+    
+    # Standardize column types
     df['Amount spent (INR)'] = pd.to_numeric(df['Amount spent (INR)'], errors='coerce').fillna(0)
     df['Results'] = pd.to_numeric(df['Results'], errors='coerce').fillna(0)
     df['Frequency'] = pd.to_numeric(df['Frequency'], errors='coerce').fillna(1.0)
     df['CTR'] = pd.to_numeric(df['CTR (link click-through rate)'], errors='coerce').fillna(0)
     
-    # Safely add Landing page views
     if 'Landing page views' in df.columns:
         df['Landing page views'] = pd.to_numeric(df['Landing page views'], errors='coerce').fillna(0)
     else:
         df['Landing page views'] = 0
         
-    # --- NEW: Time of Day parsing ---
+    if 'Impressions' in df.columns:
+        df['Impressions'] = pd.to_numeric(df['Impressions'], errors='coerce').fillna(0)
+    if 'Link clicks' in df.columns:
+        df['Link clicks'] = pd.to_numeric(df['Link clicks'], errors='coerce').fillna(0)
+        
+    # Time of Day parsing
     if 'Time of day (ad account time zone)' in df.columns:
-        # Extracts just the starting hour (e.g., "00:00" from "00:00:00 - 00:59:59")
         df['Time Block'] = df['Time of day (ad account time zone)'].str[:2] + ":00"
     else:
         df['Time Block'] = "N/A"
