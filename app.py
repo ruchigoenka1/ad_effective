@@ -245,12 +245,40 @@ if uploaded_file:
                 
                 st.markdown("---")
                 
-                # Chart 1: Rolling CPA
+                # Chart 1: Rolling CPA with Trendlines
                 st.markdown("#### Cost Per Acquisition (CPA)")
                 fig_cpa = go.Figure()
-                for ad in combined_df['Ad name'].unique():
+                
+                # Define a distinct color palette to pair ads with their trendlines
+                color_palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2']
+                
+                for i, ad in enumerate(combined_df['Ad name'].unique()):
                     ad_data = combined_df[combined_df['Ad name'] == ad]
-                    fig_cpa.add_trace(go.Scatter(x=ad_data['Date'], y=ad_data['Roll CPA'], mode='lines', name=ad))
+                    base_color = color_palette[i % len(color_palette)]
+                    
+                    # Actual Rolling Data
+                    fig_cpa.add_trace(go.Scatter(
+                        x=ad_data['Date'], 
+                        y=ad_data['Roll CPA'], 
+                        mode='lines', 
+                        name=ad,
+                        line=dict(color=base_color, width=2)
+                    ))
+                    
+                    # Linear Trendline Calculation (OLS Regression)
+                    if len(ad_data) > 1:
+                        x_num = np.arange(len(ad_data))
+                        z = np.polyfit(x_num, ad_data['Roll CPA'], 1)
+                        p = np.poly1d(z)
+                        fig_cpa.add_trace(go.Scatter(
+                            x=ad_data['Date'], 
+                            y=p(x_num), 
+                            mode='lines', 
+                            name=f"{ad} (Trend)",
+                            line=dict(color=base_color, width=1.5, dash='dot'),
+                            showlegend=False # Prevents legend clutter
+                        ))
+                        
                 fig_cpa.update_layout(yaxis_title="Rolling CPA (INR)", **dark_layout)
                 st.plotly_chart(fig_cpa, use_container_width=True)
                 
@@ -339,7 +367,29 @@ if uploaded_file:
                     
                     st.markdown("#### Cost Per Acquisition (CPA)")
                     fig_cpa = go.Figure()
-                    fig_cpa.add_trace(go.Scatter(x=daily_df.index, y=daily_df['Roll CPA'], mode='lines', name='Rolling CPA (₹)', line=dict(color='#0066CC', width=3)))
+                    
+                    # Actual Rolling Data
+                    fig_cpa.add_trace(go.Scatter(
+                        x=daily_df.index, 
+                        y=daily_df['Roll CPA'], 
+                        mode='lines', 
+                        name='Rolling CPA (₹)', 
+                        line=dict(color='#0066CC', width=3)
+                    ))
+                    
+                    # Linear Trendline Calculation (OLS Regression)
+                    if len(daily_df) > 1:
+                        x_num = np.arange(len(daily_df))
+                        z = np.polyfit(x_num, daily_df['Roll CPA'], 1)
+                        p = np.poly1d(z)
+                        fig_cpa.add_trace(go.Scatter(
+                            x=daily_df.index, 
+                            y=p(x_num), 
+                            mode='lines', 
+                            name='CPA Trend (Linear)', 
+                            line=dict(color='#FF4B4B', width=2, dash='dash')
+                        ))
+
                     fig_cpa.update_layout(yaxis_title="Rolling CPA (INR)", **dark_layout)
                     st.plotly_chart(fig_cpa, use_container_width=True)
 
