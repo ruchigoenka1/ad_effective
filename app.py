@@ -169,6 +169,7 @@ if uploaded_file:
     # --- Tab 5: Rolling Diagnostics ---
     # --- Tab 5: Rolling Diagnostics ---
     # --- Tab 5: Rolling Diagnostics ---
+    # --- Tab 5: Rolling Diagnostics ---
     with tab5:
         st.subheader("Dynamic Rolling Weighted Averages")
         
@@ -189,6 +190,14 @@ if uploaded_file:
             hovermode='x unified',
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
+        
+        # Ensure click metrics exist globally for this tab
+        working_data = data.copy()
+        for col in ['Impressions', 'Link clicks']:
+            if col not in working_data.columns:
+                working_data[col] = 0
+            else:
+                working_data[col] = pd.to_numeric(working_data[col], errors='coerce').fillna(0)
             
         if selected_rolling_ad == "Compare All Ads":
             # --- COMPARISON MODE ---
@@ -196,25 +205,39 @@ if uploaded_file:
             st.markdown(f"### Visualizing {rolling_window}-Day Rolling Metrics Across All Ads")
             
             all_ads_rolled = []
-            for ad in data['Ad name'].dropna().unique():
-                ad_df = data[data['Ad name'] == ad].groupby('Reporting starts').agg({
+            for ad in working_data['Ad name'].dropna().unique():
+                ad_df = working_data[working_data['Ad name'] == ad].groupby('Reporting starts').agg({
                     'Amount spent (INR)': 'sum',
                     'Landing page views': 'sum',
-                    'Results': 'sum'
+                    'Results': 'sum',
+                    'Impressions': 'sum',
+                    'Link clicks': 'sum'
                 }).reset_index().sort_values('Reporting starts')
                 
                 if not ad_df.empty:
                     ad_df.set_index('Reporting starts', inplace=True)
+                    
+                    # Trim leading inactive days
+                    first_spend_date = ad_df[ad_df['Amount spent (INR)'] > 0].index.min()
+                    if pd.notna(first_spend_date):
+                        ad_df = ad_df.loc[first_spend_date:]
+                    
                     idx = pd.date_range(ad_df.index.min(), ad_df.index.max())
                     ad_df = ad_df.reindex(idx, fill_value=0)
                     
+                    # Roll Absolutes
                     ad_df['Roll Spend'] = ad_df['Amount spent (INR)'].rolling(window=rolling_window, min_periods=1).sum()
                     ad_df['Roll LPV'] = ad_df['Landing page views'].rolling(window=rolling_window, min_periods=1).sum()
                     ad_df['Roll Purch'] = ad_df['Results'].rolling(window=rolling_window, min_periods=1).sum()
+                    ad_df['Roll Imp'] = ad_df['Impressions'].rolling(window=rolling_window, min_periods=1).sum()
+                    ad_df['Roll Clicks'] = ad_df['Link clicks'].rolling(window=rolling_window, min_periods=1).sum()
                     
+                    # Calculate Ratios
                     ad_df['Roll CPA'] = np.where(ad_df['Roll Purch'] > 0, ad_df['Roll Spend'] / ad_df['Roll Purch'], 0)
                     ad_df['Roll LPV->Purchase %'] = np.where(ad_df['Roll LPV'] > 0, (ad_df['Roll Purch'] / ad_df['Roll LPV']) * 100, 0)
                     ad_df['Roll Cost/LPV'] = np.where(ad_df['Roll LPV'] > 0, ad_df['Roll Spend'] / ad_df['Roll LPV'], 0)
+                    ad_df['Roll CPM'] = np.where(ad_df['Roll Imp'] > 0, (ad_df['Roll Spend'] / ad_df['Roll Imp']) * 1000, 0)
+                    ad_df['Roll CTR (%)'] = np.where(ad_df['Roll Imp'] > 0, (ad_df['Roll Clicks'] / ad_df['Roll Imp']) * 100, 0)
                     
                     ad_df['Ad name'] = ad
                     all_ads_rolled.append(ad_df)
@@ -226,18 +249,17 @@ if uploaded_file:
                 # --- Tabular Data Audit for Comparison ---
                 st.markdown(f"### 📋 {rolling_window}-Day Rolling Data Log (All Ads)")
                 
-                display_combined_df = combined_df[['Date', 'Ad name', 'Roll Spend', 'Roll LPV', 'Roll Purch', 'Roll Cost/LPV', 'Roll LPV->Purchase %', 'Roll CPA']].copy()
+                display_combined_df = combined_df[['Date', 'Ad name', 'Roll Spend', 'Roll CPA', 'Roll LPV->Purchase %', 'Roll CPM', 'Roll CTR (%)']].copy()
                 display_combined_df = display_combined_df.sort_values(by=['Date', 'Ad name'], ascending=[False, True])
                 
                 st.dataframe(
                     display_combined_df.style.format({
                         'Date': lambda t: t.strftime('%Y-%m-%d'),
                         'Roll Spend': '₹{:,.2f}',
-                        'Roll LPV': '{:,.0f}',
-                        'Roll Purch': '{:,.0f}',
-                        'Roll Cost/LPV': '₹{:,.2f}',
+                        'Roll CPA': '₹{:,.2f}',
                         'Roll LPV->Purchase %': '{:.2f}%',
-                        'Roll CPA': '₹{:,.2f}'
+                        'Roll CPM': '₹{:,.2f}',
+                        'Roll CTR (%)': '{:.2f}%'
                     }),
                     use_container_width=True,
                     hide_index=True
@@ -245,127 +267,113 @@ if uploaded_file:
                 
                 st.markdown("---")
                 
-                # Chart 1: Rolling CPA with Trendlines
-                st.markdown("#### Cost Per Acquisition (CPA)")
-                fig_cpa = go.Figure()
-                
-                # Define a distinct color palette to pair ads with their trendlines
-                color_palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2']
-                
-                for i, ad in enumerate(combined_df['Ad name'].unique()):
-                    ad_data = combined_df[combined_df['Ad name'] == ad]
-                    base_color = color_palette[i % len(color_palette)]
+                # --- Plotting Helper for Comparison Mode ---
+                def plot_comparison_metric(metric_col, title, y_title):
+                    st.markdown(f"#### {title}")
+                    fig = go.Figure()
+                    color_palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2']
                     
-                    # Actual Rolling Data
-                    fig_cpa.add_trace(go.Scatter(
-                        x=ad_data['Date'], 
-                        y=ad_data['Roll CPA'], 
-                        mode='lines', 
-                        name=ad,
-                        line=dict(color=base_color, width=2)
-                    ))
-                    
-                    # Linear Trendline Calculation (OLS Regression)
-                    if len(ad_data) > 1:
-                        x_num = np.arange(len(ad_data))
-                        z = np.polyfit(x_num, ad_data['Roll CPA'], 1)
-                        p = np.poly1d(z)
-                        fig_cpa.add_trace(go.Scatter(
-                            x=ad_data['Date'], 
-                            y=p(x_num), 
-                            mode='lines', 
-                            name=f"{ad} (Trend)",
-                            line=dict(color=base_color, width=1.5, dash='dot'),
-                            showlegend=False # Prevents legend clutter
-                        ))
+                    for i, ad in enumerate(combined_df['Ad name'].unique()):
+                        ad_data = combined_df[combined_df['Ad name'] == ad]
+                        base_color = color_palette[i % len(color_palette)]
                         
-                fig_cpa.update_layout(yaxis_title="Rolling CPA (INR)", **dark_layout)
-                st.plotly_chart(fig_cpa, use_container_width=True)
-                
-                # Chart 2: Rolling Conversion Rate
-                st.markdown("#### Conversion Rate (LPV -> Purchase)")
-                fig_cvr = go.Figure()
-                for ad in combined_df['Ad name'].unique():
-                    ad_data = combined_df[combined_df['Ad name'] == ad]
-                    fig_cvr.add_trace(go.Scatter(x=ad_data['Date'], y=ad_data['Roll LPV->Purchase %'], mode='lines', name=ad))
-                fig_cvr.update_layout(yaxis_title="LPV -> Purchase (%)", **dark_layout)
-                st.plotly_chart(fig_cvr, use_container_width=True)
-                
-                # Chart 3: Rolling Spend
-                st.markdown("#### Budget Deployment (Spend)")
-                fig_spend = go.Figure()
-                for ad in combined_df['Ad name'].unique():
-                    ad_data = combined_df[combined_df['Ad name'] == ad]
-                    fig_spend.add_trace(go.Scatter(x=ad_data['Date'], y=ad_data['Roll Spend'], mode='lines', name=ad))
-                fig_spend.update_layout(yaxis_title="Rolling Spend (INR)", **dark_layout)
-                st.plotly_chart(fig_spend, use_container_width=True)
-        
+                        # Actual Data
+                        fig.add_trace(go.Scatter(x=ad_data['Date'], y=ad_data[metric_col], mode='lines', name=ad, line=dict(color=base_color, width=2)))
+                        
+                        # Trendline
+                        if len(ad_data) > 1:
+                            x_num = np.arange(len(ad_data))
+                            z = np.polyfit(x_num, ad_data[metric_col], 1)
+                            p = np.poly1d(z)
+                            fig.add_trace(go.Scatter(
+                                x=ad_data['Date'], y=p(x_num), mode='lines', name=f"{ad} (Trend)",
+                                line=dict(color=base_color, width=1.5, dash='dot'), showlegend=False
+                            ))
+                            
+                    fig.update_layout(yaxis_title=y_title, **dark_layout)
+                    st.plotly_chart(fig, use_container_width=True)
+
+                plot_comparison_metric('Roll CPA', 'Cost Per Acquisition (CPA)', 'Rolling CPA (INR)')
+                plot_comparison_metric('Roll LPV->Purchase %', 'Conversion Rate (LPV -> Purchase)', 'LPV -> Purchase (%)')
+                plot_comparison_metric('Roll Spend', 'Budget Deployment (Spend)', 'Rolling Spend (INR)')
+                plot_comparison_metric('Roll CPM', 'Cost Per 1,000 Impressions (CPM)', 'Rolling CPM (INR)')
+                plot_comparison_metric('Roll CTR (%)', 'Click-Through Rate (CTR)', 'Rolling CTR (%)')
+
         else:
             # --- INDIVIDUAL OR OVERALL MODE ---
             if selected_rolling_ad == "All Ads (Overall)":
-                df_filtered = data.copy()
+                df_filtered = working_data.copy()
             else:
-                df_filtered = data[data['Ad name'] == selected_rolling_ad].copy()
+                df_filtered = working_data[working_data['Ad name'] == selected_rolling_ad].copy()
                 
             daily_df = df_filtered.groupby('Reporting starts').agg({
                 'Amount spent (INR)': 'sum',
                 'Landing page views': 'sum',
-                'Results': 'sum'
+                'Results': 'sum',
+                'Impressions': 'sum',
+                'Link clicks': 'sum'
             }).reset_index().sort_values('Reporting starts')
             
             if not daily_df.empty:
                 daily_df.set_index('Reporting starts', inplace=True)
                 
-                # --- NEW LOGIC: Trim leading inactive days for individual ads ---
+                # Trim leading inactive days
                 if selected_rolling_ad != "All Ads (Overall)":
                     first_spend_date = daily_df[daily_df['Amount spent (INR)'] > 0].index.min()
                     if pd.notna(first_spend_date):
                         daily_df = daily_df.loc[first_spend_date:]
-                # ---------------------------------------------------------------
                 
-                # Reindex creates a continuous timeline from the true start date to the max date
                 idx = pd.date_range(daily_df.index.min(), daily_df.index.max())
                 daily_df = daily_df.reindex(idx, fill_value=0)
                 
+                # Roll Absolutes
                 daily_df['Roll Spend'] = daily_df['Amount spent (INR)'].rolling(window=rolling_window, min_periods=1).sum()
                 daily_df['Roll LPV'] = daily_df['Landing page views'].rolling(window=rolling_window, min_periods=1).sum()
                 daily_df['Roll Purch'] = daily_df['Results'].rolling(window=rolling_window, min_periods=1).sum()
+                daily_df['Roll Imp'] = daily_df['Impressions'].rolling(window=rolling_window, min_periods=1).sum()
+                daily_df['Roll Clicks'] = daily_df['Link clicks'].rolling(window=rolling_window, min_periods=1).sum()
                 
+                # Calculate Ratios
                 daily_df['Roll Cost/LPV'] = np.where(daily_df['Roll LPV'] > 0, daily_df['Roll Spend'] / daily_df['Roll LPV'], 0)
                 daily_df['Roll LPV->Purchase %'] = np.where(daily_df['Roll LPV'] > 0, (daily_df['Roll Purch'] / daily_df['Roll LPV']) * 100, 0)
                 daily_df['Roll CPA'] = np.where(daily_df['Roll Purch'] > 0, daily_df['Roll Spend'] / daily_df['Roll Purch'], 0)
+                daily_df['Roll CPM'] = np.where(daily_df['Roll Imp'] > 0, (daily_df['Roll Spend'] / daily_df['Roll Imp']) * 1000, 0)
+                daily_df['Roll CTR (%)'] = np.where(daily_df['Roll Imp'] > 0, (daily_df['Roll Clicks'] / daily_df['Roll Imp']) * 100, 0)
                 
                 latest_data = daily_df.iloc[-1]
                 
                 st.markdown("---")
                 st.markdown(f"### Current {rolling_window}-Day Rolling Metrics")
                 
-                kpi1, kpi2, kpi3 = st.columns(3)
+                kpi1, kpi2, kpi3, kpi4 = st.columns(4)
                 with kpi1:
                     st.metric("Roll Spend", f"₹{latest_data['Roll Spend']:,.2f}")
                     st.metric("Roll CPA", f"₹{latest_data['Roll CPA']:,.2f}")
                 with kpi2:
-                    st.metric("Roll LPVs (Absolute)", f"{latest_data['Roll LPV']:,.0f}")
-                    st.metric("Roll Cost/LPV", f"₹{latest_data['Roll Cost/LPV']:,.2f}")
+                    st.metric("Roll CPM", f"₹{latest_data['Roll CPM']:,.2f}")
+                    st.metric("Roll CTR", f"{latest_data['Roll CTR (%)']:.2f}%")
                 with kpi3:
-                    st.metric("Roll Purchases (Absolute)", f"{latest_data['Roll Purch']:,.0f}")
-                    st.metric("Roll LPV -> Purchase %", f"{latest_data['Roll LPV->Purchase %']:.2f}%")
+                    st.metric("Roll LPVs", f"{latest_data['Roll LPV']:,.0f}")
+                    st.metric("Roll Cost/LPV", f"₹{latest_data['Roll Cost/LPV']:,.2f}")
+                with kpi4:
+                    st.metric("Roll Purchases", f"{latest_data['Roll Purch']:,.0f}")
+                    st.metric("LPV -> Purchase %", f"{latest_data['Roll LPV->Purchase %']:.2f}%")
 
                 # --- Tabular Data Audit ---
                 st.markdown("---")
                 st.markdown(f"### 📋 {rolling_window}-Day Rolling Data Log")
                 
-                display_df = daily_df[['Roll Spend', 'Roll LPV', 'Roll Purch', 'Roll Cost/LPV', 'Roll LPV->Purchase %', 'Roll CPA']].copy()
+                display_df = daily_df[['Roll Spend', 'Roll CPA', 'Roll CPM', 'Roll CTR (%)', 'Roll Cost/LPV', 'Roll LPV->Purchase %']].copy()
                 display_df = display_df.sort_index(ascending=False) 
                 
                 st.dataframe(
                     display_df.style.format({
                         'Roll Spend': '₹{:,.2f}',
-                        'Roll LPV': '{:,.0f}',
-                        'Roll Purch': '{:,.0f}',
+                        'Roll CPA': '₹{:,.2f}',
+                        'Roll CPM': '₹{:,.2f}',
+                        'Roll CTR (%)': '{:.2f}%',
                         'Roll Cost/LPV': '₹{:,.2f}',
-                        'Roll LPV->Purchase %': '{:.2f}%',
-                        'Roll CPA': '₹{:,.2f}'
+                        'Roll LPV->Purchase %': '{:.2f}%'
                     }),
                     use_container_width=True
                 )
@@ -374,68 +382,49 @@ if uploaded_file:
                     st.markdown("---")
                     st.markdown(f"### Historical {rolling_window}-Day Efficiency Trajectory")
                     
-                    st.markdown("#### Cost Per Acquisition (CPA)")
-                    fig_cpa = go.Figure()
-                    
-                    # Actual Rolling Data
-                    fig_cpa.add_trace(go.Scatter(
-                        x=daily_df.index, 
-                        y=daily_df['Roll CPA'], 
-                        mode='lines', 
-                        name='Rolling CPA (₹)', 
-                        line=dict(color='#0066CC', width=3)
-                    ))
-                    
-                    # Linear Trendline Calculation (OLS Regression)
-                    if len(daily_df) > 1:
-                        x_num = np.arange(len(daily_df))
-                        z = np.polyfit(x_num, daily_df['Roll CPA'], 1)
-                        p = np.poly1d(z)
-                        fig_cpa.add_trace(go.Scatter(
-                            x=daily_df.index, 
-                            y=p(x_num), 
-                            mode='lines', 
-                            name='CPA Trend (Linear)', 
-                            line=dict(color='#FF4B4B', width=2, dash='dash')
+                    # --- Plotting Helper for Individual Mode ---
+                    def plot_individual_metric(metric_col, title, y_title, line_color):
+                        st.markdown(f"#### {title}")
+                        fig = go.Figure()
+                        
+                        # Actual Data
+                        fig.add_trace(go.Scatter(
+                            x=daily_df.index, y=daily_df[metric_col], mode='lines', 
+                            name=f'Rolling {title}', line=dict(color=line_color, width=3)
                         ))
+                        
+                        # Trendline
+                        if len(daily_df) > 1:
+                            x_num = np.arange(len(daily_df))
+                            z = np.polyfit(x_num, daily_df[metric_col], 1)
+                            p = np.poly1d(z)
+                            fig.add_trace(go.Scatter(
+                                x=daily_df.index, y=p(x_num), mode='lines', name='Trend (Linear)', 
+                                line=dict(color='#FF4B4B', width=2, dash='dash')
+                            ))
+                            
+                        fig.update_layout(yaxis_title=y_title, **dark_layout)
+                        st.plotly_chart(fig, use_container_width=True)
 
-                    fig_cpa.update_layout(yaxis_title="Rolling CPA (INR)", **dark_layout)
-                    st.plotly_chart(fig_cpa, use_container_width=True)
-
-                    st.markdown("#### Conversion Rate (LPV -> Purchase)")
-                    fig_cvr = go.Figure()
-                    fig_cvr.add_trace(go.Scatter(x=daily_df.index, y=daily_df['Roll LPV->Purchase %'], mode='lines', name='Rolling LPV->Purch %', line=dict(color='#A0C4FF', width=3)))
-                    fig_cvr.update_layout(yaxis_title="LPV -> Purchase (%)", **dark_layout)
-                    st.plotly_chart(fig_cvr, use_container_width=True)
-
-                    st.markdown("#### Budget Deployment (Spend)")
-                    fig_spend = go.Figure()
-                    fig_spend.add_trace(go.Scatter(x=daily_df.index, y=daily_df['Roll Spend'], mode='lines', name='Rolling Spend (₹)', line=dict(color='#FFFFFF', width=3)))
-                    fig_spend.update_layout(yaxis_title="Rolling Spend (INR)", **dark_layout)
-                    st.plotly_chart(fig_spend, use_container_width=True)
+                    plot_individual_metric('Roll CPA', 'Cost Per Acquisition (CPA)', 'Rolling CPA (INR)', '#0066CC')
+                    plot_individual_metric('Roll LPV->Purchase %', 'Conversion Rate (LPV -> Purchase)', 'LPV -> Purchase (%)', '#A0C4FF')
+                    plot_individual_metric('Roll Spend', 'Budget Deployment (Spend)', 'Rolling Spend (INR)', '#FFFFFF')
+                    plot_individual_metric('Roll CPM', 'Cost Per 1,000 Impressions (CPM)', 'Rolling CPM (INR)', '#FFA500')
+                    plot_individual_metric('Roll CTR (%)', 'Click-Through Rate (CTR)', 'Rolling CTR (%)', '#32CD32')
 
         # --- SECTION: Performance Analysis (DOW & Weekly) ---
         st.markdown("---")
         st.subheader("📅 Time-Based Performance Analysis")
-        st.markdown(f"Analyzing data for: **{selected_rolling_ad}**")
         
         if selected_rolling_ad == "Compare All Ads":
-            time_base_df = data.copy()
+            time_base_df = working_data.copy()
         else:
             time_base_df = df_filtered.copy()
             
-        # Ensure click metrics exist before grouping
-        for col in ['Impressions', 'Link clicks']:
-            if col not in time_base_df.columns:
-                time_base_df[col] = 0
-            else:
-                time_base_df[col] = pd.to_numeric(time_base_df[col], errors='coerce').fillna(0)
-
         if not time_base_df.empty:
             min_date = time_base_df['Reporting starts'].min().date()
             max_date = time_base_df['Reporting starts'].max().date()
             
-            # --- Global Date Inputs for both DOW and Weekly ---
             col_d1, col_d2 = st.columns(2)
             with col_d1:
                 start_date = st.date_input("Start Date", min_date, min_value=min_date, max_value=max_date)
@@ -468,7 +457,6 @@ if uploaded_file:
                 dow_agg['LPV->Purchase (%)'] = np.where(dow_agg['Landing page views'] > 0, (dow_agg['Results'] / dow_agg['Landing page views']) * 100, 0)
                 dow_agg['CPA (INR)'] = np.where(dow_agg['Results'] > 0, dow_agg['Amount spent (INR)'] / dow_agg['Results'], 0)
                 
-                # Display DOW Table
                 with st.expander("Show Raw Data Table (Day of Week)"):
                     st.dataframe(
                         dow_agg.style.format({
@@ -504,8 +492,6 @@ if uploaded_file:
                     fig_dow_ctr.update_layout(title="Click-Through Rate (CTR)", yaxis_title="CTR (%)", **bar_layout)
                     st.plotly_chart(fig_dow_ctr, use_container_width=True)
                     
-                
-                # Row 2: Link->LPV, Spend, LPV->Purchase
                 col_bar4, col_bar5, col_bar6 = st.columns(3)
                 with col_bar4:
                     fig_dow_dropoff = go.Figure(data=[go.Bar(x=dow_agg['Day of Week'], y=dow_agg['Link->LPV (%)'], marker_color='#A0C4FF')])
@@ -524,7 +510,6 @@ if uploaded_file:
                 st.markdown("---")
                 st.markdown("### Absolute Date-Range Aggregation (Weekly Breakdown)")
                 
-                # Assign week starting on Monday
                 filtered_time_df['Week Start'] = filtered_time_df['Reporting starts'].dt.to_period('W-MON').dt.start_time.dt.date
                 
                 week_agg = filtered_time_df.groupby('Week Start').agg({
@@ -543,10 +528,8 @@ if uploaded_file:
                 week_agg['LPV->Purchase (%)'] = np.where(week_agg['Landing page views'] > 0, (week_agg['Results'] / week_agg['Landing page views']) * 100, 0)
                 week_agg['CPA (INR)'] = np.where(week_agg['Results'] > 0, week_agg['Amount spent (INR)'] / week_agg['Results'], 0)
                 
-                # Format dates for plotting and tables
                 week_agg['Week Label'] = week_agg['Week Start'].apply(lambda x: x.strftime('%b %d, %Y'))
                 
-                # Display Weekly Table
                 with st.expander("Show Raw Data Table (Weekly Breakdown)"):
                     st.dataframe(
                         week_agg[['Week Label', 'Amount spent (INR)', 'Impressions', 'Link clicks', 'Landing page views', 'Results', 'CTR (%)', 'Cost/LPV (INR)', 'Link->LPV (%)', 'LPV->Purchase (%)', 'CPA (INR)']].style.format({
@@ -599,7 +582,6 @@ if uploaded_file:
             # --- 3. Rolling DOW Trends (Weighted Average of Last N specific days) ---
             st.markdown("---")
             st.markdown("#### 🔄 Rolling Day-of-the-Week Trends")
-            st.markdown("*(e.g., The weighted average of the last 7 Tuesdays)*")
             
             col_roll1, col_roll2 = st.columns(2)
             with col_roll1:
