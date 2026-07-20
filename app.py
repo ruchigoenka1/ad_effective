@@ -86,12 +86,13 @@ if uploaded_file:
     data = load_and_clean_data(uploaded_file)
     
     # Define tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "Budget Allocation", 
         "Bayesian Testing", 
         "Path Analysis", 
         "Fatigue Diagnosis",
-        "Rolling Diagnostics"
+        "Rolling Diagnostics",
+        "Geographic Analysis"
     ])
     
     # --- Tab 1 to 3 Placeholders ---
@@ -863,6 +864,174 @@ if uploaded_file:
             st.warning("No data available for the selected scope.")
 
 
+    # --- Tab 6: Geographic Analysis ---
+    with tab6:
+        st.subheader("🌍 Geographic Performance Analysis")
+        st.info("Upload your 'By Region' + 'By Time (Day)' Facebook export below.")
+        
+        # Dedicated uploader just for Tab 6
+        geo_file = st.file_uploader("Upload Geographic Data", type=['csv', 'xlsx'], key="geo_uploader")
+        
+        if geo_file is not None:
+            # Use your existing helper function to clean the dates and numbers
+            geo_data = load_and_clean_data(geo_file)
+            
+            # Check if Region data actually exists in this specific upload
+            if 'Region' not in geo_data.columns:
+                st.error("The uploaded file does not contain a 'Region' column. Please ensure your Facebook export includes the 'Region' breakdown.")
+            else:
+                col_g1, col_g2 = st.columns(2)
+                with col_g1:
+                    geo_ad_options = ["All Ads (Overall)"] + geo_data['Ad name'].dropna().unique().tolist()
+                    selected_geo_ad = st.selectbox("Select Ad/Scope:", options=geo_ad_options, key="geo_ad_select")
+                
+                # Filter Data based on Ad Selection
+                if selected_geo_ad == "All Ads (Overall)":
+                    geo_df = geo_data.copy()
+                else:
+                    geo_df = geo_data[geo_data['Ad name'] == selected_geo_ad].copy()
+                    
+                # Date Range Filters
+                if not geo_df.empty:
+                    min_date_geo = geo_df['Reporting starts'].min().date()
+                    max_date_geo = geo_df['Reporting starts'].max().date()
+                    
+                    st.markdown("---")
+                    col_d1, col_d2 = st.columns(2)
+                    with col_d1:
+                        start_date_geo = st.date_input("Start Date", min_date_geo, min_value=min_date_geo, max_value=max_date_geo, key="geo_start")
+                    with col_d2:
+                        end_date_geo = st.date_input("End Date", max_date_geo, min_value=min_date_geo, max_value=max_date_geo, key="geo_end")
+                        
+                    if start_date_geo <= end_date_geo:
+                        mask_geo = (geo_df['Reporting starts'].dt.date >= start_date_geo) & (geo_df['Reporting starts'].dt.date <= end_date_geo)
+                        geo_filtered = geo_df[mask_geo].copy()
+                        
+                        # --- 1. Regional Aggregation Table ---
+                        st.markdown("### 📍 Location-wise Performance Metrics")
+                        st.caption("Reviewing absolute volumes alongside efficiency ratios to identify true regional scale.")
+                        
+                        region_agg = geo_filtered.groupby('Region').agg({
+                            'Amount spent (INR)': 'sum',
+                            'Impressions': 'sum',
+                            'Link clicks': 'sum',
+                            'Landing page views': 'sum',
+                            'Results': 'sum'
+                        }).reset_index()
+                        
+                        # Calculate Derived Ratios
+                        region_agg['CPM (INR)'] = np.where(region_agg['Impressions'] > 0, (region_agg['Amount spent (INR)'] / region_agg['Impressions']) * 1000, 0)
+                        region_agg['CTR (%)'] = np.where(region_agg['Impressions'] > 0, (region_agg['Link clicks'] / region_agg['Impressions']) * 100, 0)
+                        region_agg['CPC (INR)'] = np.where(region_agg['Link clicks'] > 0, region_agg['Amount spent (INR)'] / region_agg['Link clicks'], 0)
+                        region_agg['Cost/LPV (INR)'] = np.where(region_agg['Landing page views'] > 0, region_agg['Amount spent (INR)'] / region_agg['Landing page views'], 0)
+                        region_agg['Link->LPV (%)'] = np.where(region_agg['Link clicks'] > 0, (region_agg['Landing page views'] / region_agg['Link clicks']) * 100, 0)
+                        region_agg['LPV->Purchase (%)'] = np.where(region_agg['Landing page views'] > 0, (region_agg['Results'] / region_agg['Landing page views']) * 100, 0)
+                        
+                        # For CPA, use np.nan for 0 results to prevent skewed data
+                        region_agg['CPA (INR)'] = np.where(region_agg['Results'] > 0, region_agg['Amount spent (INR)'] / region_agg['Results'], np.nan) 
+                        
+                        # Filter out regions with zero spend to keep the table clean
+                        region_agg = region_agg[region_agg['Amount spent (INR)'] > 0]
+                        region_agg = region_agg.sort_values(by='Amount spent (INR)', ascending=False)
+                        
+                        # Rename Results for clarity
+                        region_agg.rename(columns={'Results': 'Conversions'}, inplace=True)
+                        
+                        st.dataframe(
+                            region_agg.style.format({
+                                'Amount spent (INR)': '₹{:,.2f}',
+                                'Impressions': '{:,.0f}',
+                                'Link clicks': '{:,.0f}',
+                                'Landing page views': '{:,.0f}',
+                                'Conversions': '{:,.0f}',
+                                'CPM (INR)': '₹{:,.2f}',
+                                'CTR (%)': '{:.2f}%',
+                                'CPC (INR)': '₹{:,.2f}',
+                                'Cost/LPV (INR)': '₹{:,.2f}',
+                                'Link->LPV (%)': '{:.2f}%',
+                                'LPV->Purchase (%)': '{:.2f}%',
+                                'CPA (INR)': '₹{:,.2f}'
+                            }).background_gradient(cmap='Blues', subset=['Amount spent (INR)', 'Conversions'])
+                              .background_gradient(cmap='Reds', subset=['CPA (INR)', 'Cost/LPV (INR)']),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                        
+                        # --- 2. Regional Conversions by Day Heatmap ---
+                        st.markdown("---")
+                        st.markdown("### 🗺️ Conversions Velocity Map (Day of Week vs. Region)")
+                        st.caption("Visualizing exactly when and where conversions are generated. Blank regions indicate zero conversions.")
+                        
+                        # Define Dark Theme Layout (if not inherited globally)
+                        dark_layout = dict(
+                            plot_bgcolor='black',
+                            paper_bgcolor='black',
+                            font=dict(color='white'),
+                            xaxis=dict(showgrid=False, gridcolor='#333333'),
+                            yaxis=dict(showgrid=False, gridcolor='#333333')
+                        )
+                        
+                        # Extract Day of Week
+                        geo_filtered['Day of Week'] = geo_filtered['Reporting starts'].dt.day_name()
+                        
+                        # Group data
+                        heat_geo = geo_filtered.groupby(['Region', 'Day of Week']).agg({
+                            'Results': 'sum'
+                        }).reset_index()
+                        
+                        # Filter heatmap to only show regions that actually spent money
+                        active_regions = region_agg['Region'].unique()
+                        heat_geo = heat_geo[heat_geo['Region'].isin(active_regions)]
+                        
+                        # Replace 0s with NaNs so dead zones appear as transparent/white blocks
+                        heat_geo['Results_Heatmap'] = np.where(heat_geo['Results'] > 0, heat_geo['Results'], np.nan)
+                        
+                        if not heat_geo['Results_Heatmap'].isna().all():
+                            # Pivot for Heatmap
+                            pivot_geo = heat_geo.pivot(index='Region', columns='Day of Week', values='Results_Heatmap')
+                            
+                            # Standardize columns to ensure all days of the week exist in order
+                            days_order_geo = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                            for day in days_order_geo:
+                                if day not in pivot_geo.columns:
+                                    pivot_geo[day] = np.nan
+                            pivot_geo = pivot_geo.reindex(columns=days_order_geo)
+                            
+                            # Sort regions by total conversions (descending) so top performing states are at the top
+                            pivot_geo['Total'] = pivot_geo.sum(axis=1)
+                            pivot_geo = pivot_geo.sort_values('Total', ascending=False).drop(columns=['Total'])
+                            
+                            # Clean Text Display (skip NaNs)
+                            text_display_geo = [[f"{val:,.0f}" if pd.notnull(val) else "" for val in row] for row in pivot_geo.values]
+                            
+                            # Build Chart
+                            fig_geo_heat = go.Figure(data=go.Heatmap(
+                                z=pivot_geo.values,
+                                x=pivot_geo.columns,
+                                y=pivot_geo.index,
+                                colorscale='Inferno',
+                                missing='white',
+                                text=text_display_geo,
+                                texttemplate="%{text}",
+                                textfont={"size": 12},
+                                hoverongaps=False
+                            ))
+                            
+                            # Dynamic Height based on number of regions to prevent squishing
+                            dynamic_height = max(400, len(pivot_geo) * 35)
+                            
+                            geo_layout = dark_layout.copy()
+                            geo_layout['plot_bgcolor'] = '#FFFFFF' # White background shines through NaNs
+                            geo_layout['yaxis']['autorange'] = "reversed" # Keep highest volume region at the top
+                            
+                            fig_geo_heat.update_layout(
+                                title="Total Conversions by Region and Day",
+                                height=dynamic_height,
+                                **geo_layout
+                            )
+                            st.plotly_chart(fig_geo_heat, use_container_width=True)
+                        else:
+                            st.info("No conversions recorded in the selected data range.")
 
 else:
     st.info("Upload your raw Facebook Ads CSV or XLSX in the sidebar to run the diagnostics.")
