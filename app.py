@@ -86,13 +86,14 @@ if uploaded_file:
     data = load_and_clean_data(uploaded_file)
     
     # Define tabs
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "Budget Allocation", 
         "Bayesian Testing", 
         "Path Analysis", 
         "Fatigue Diagnosis",
         "Rolling Diagnostics",
-        "Geographic Analysis"
+        "Geographic Analysis",
+        "Placement Analysis"
     ])
     
     # --- Tab 1 to 3 Placeholders ---
@@ -1032,6 +1033,205 @@ if uploaded_file:
                             st.plotly_chart(fig_geo_heat, use_container_width=True)
                         else:
                             st.info("No conversions recorded in the selected data range.")
+
+    # --- Tab 7: Placement Analysis ---
+    with tab7:
+        st.subheader("📱 Platform & Placement Diagnostics")
+        st.info("Upload your 'By Placement' + 'By Time (Day)' Facebook export below.")
+        
+        # Dedicated uploader just for Tab 7
+        placement_file = st.file_uploader("Upload Placement Data", type=['csv', 'xlsx'], key="placement_uploader")
+        
+        if placement_file is not None:
+            place_data = load_and_clean_data(placement_file)
+            
+            if 'Placement' not in place_data.columns:
+                st.error("The uploaded file does not contain a 'Placement' column. Please ensure your export includes the 'Placement' breakdown.")
+            else:
+                col_p1, col_p2 = st.columns(2)
+                with col_p1:
+                    place_ad_options = ["All Ads (Overall)"] + place_data['Ad name'].dropna().unique().tolist()
+                    selected_place_ad = st.selectbox("Select Ad/Scope:", options=place_ad_options, key="place_ad_select")
+                
+                if selected_place_ad == "All Ads (Overall)":
+                    place_df = place_data.copy()
+                else:
+                    place_df = place_data[place_data['Ad name'] == selected_place_ad].copy()
+                    
+                if not place_df.empty:
+                    min_date_p = place_df['Reporting starts'].min().date()
+                    max_date_p = place_df['Reporting starts'].max().date()
+                    
+                    st.markdown("---")
+                    col_pd1, col_pd2 = st.columns(2)
+                    with col_pd1:
+                        start_date_p = st.date_input("Start Date", min_date_p, min_value=min_date_p, max_value=max_date_p, key="place_start")
+                    with col_pd2:
+                        end_date_p = st.date_input("End Date", max_date_p, min_value=min_date_p, max_value=max_date_p, key="place_end")
+                        
+                    if start_date_p <= end_date_p:
+                        mask_p = (place_df['Reporting starts'].dt.date >= start_date_p) & (place_df['Reporting starts'].dt.date <= end_date_p)
+                        place_filtered = place_df[mask_p].copy()
+                        
+                        # --- 1. Placement Aggregation Table ---
+                        st.markdown("### 📊 Placement-wise Performance Metrics")
+                        st.caption("Reviewing absolute physical volumes alongside efficiency ratios to identify true placement scale.")
+                        
+                        place_agg = place_filtered.groupby('Placement').agg({
+                            'Amount spent (INR)': 'sum',
+                            'Impressions': 'sum',
+                            'Link clicks': 'sum',
+                            'Landing page views': 'sum',
+                            'Results': 'sum'
+                        }).reset_index()
+                        
+                        # Calculate Efficiency Ratios
+                        place_agg['CPM (INR)'] = np.where(place_agg['Impressions'] > 0, (place_agg['Amount spent (INR)'] / place_agg['Impressions']) * 1000, 0)
+                        place_agg['CTR (%)'] = np.where(place_agg['Impressions'] > 0, (place_agg['Link clicks'] / place_agg['Impressions']) * 100, 0)
+                        place_agg['Cost/LPV (INR)'] = np.where(place_agg['Landing page views'] > 0, place_agg['Amount spent (INR)'] / place_agg['Landing page views'], 0)
+                        place_agg['Link->LPV (%)'] = np.where(place_agg['Link clicks'] > 0, (place_agg['Landing page views'] / place_agg['Link clicks']) * 100, 0)
+                        place_agg['LPV->Purchase (%)'] = np.where(place_agg['Landing page views'] > 0, (place_agg['Results'] / place_agg['Landing page views']) * 100, 0)
+                        place_agg['CPA (INR)'] = np.where(place_agg['Results'] > 0, place_agg['Amount spent (INR)'] / place_agg['Results'], np.nan) 
+                        
+                        # Filter zero-spend placements and sort
+                        place_agg = place_agg[place_agg['Amount spent (INR)'] > 0].sort_values(by='Amount spent (INR)', ascending=False)
+                        place_agg.rename(columns={'Results': 'Conversions'}, inplace=True)
+                        
+                        # Interactive Table with Matplotlib Gradients
+                        st.dataframe(
+                            place_agg.style.format({
+                                'Amount spent (INR)': '₹{:,.2f}',
+                                'Impressions': '{:,.0f}',
+                                'Link clicks': '{:,.0f}',
+                                'Landing page views': '{:,.0f}',
+                                'Conversions': '{:,.0f}',
+                                'CPM (INR)': '₹{:,.2f}',
+                                'CTR (%)': '{:.2f}%',
+                                'Cost/LPV (INR)': '₹{:,.2f}',
+                                'Link->LPV (%)': '{:.2f}%',
+                                'LPV->Purchase (%)': '{:.2f}%',
+                                'CPA (INR)': '₹{:,.2f}'
+                            }).background_gradient(cmap='Blues', subset=['Amount spent (INR)', 'Conversions'])
+                              .background_gradient(cmap='Reds', subset=['CPA (INR)', 'Cost/LPV (INR)']),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                        
+                        # --- 2. Heatmap: Day of Week vs Placement ---
+                        st.markdown("---")
+                        st.markdown("### 🗓️ Conversions & Efficiency Matrix (Day of Week vs. Placement)")
+                        st.caption("Visualizing exactly when and where efficiency peaks. Blank grid areas indicate zero return/spend.")
+                        
+                        heatmap_metric_label_p = st.selectbox(
+                            "Select Metric for Heatmap:", 
+                            [
+                                "Conversions (Results)",
+                                "CPA (INR)", 
+                                "Amount spent (INR)", 
+                                "CTR (%)", 
+                                "LPV->Purchase (%)", 
+                                "Link->LPV (%)"
+                            ],
+                            key="place_heatmap_metric_select"
+                        )
+                        
+                        metric_map_p = {
+                            "Conversions (Results)": "Results_Heatmap",
+                            "CPA (INR)": "CPA (INR)",
+                            "Amount spent (INR)": "Amount spent (INR)",
+                            "CTR (%)": "CTR (%)",
+                            "LPV->Purchase (%)": "LPV->Purchase (%)",
+                            "Link->LPV (%)": "Link->LPV (%)"
+                        }
+                        target_metric_p = metric_map_p[heatmap_metric_label_p]
+                        
+                        place_filtered['Day of Week'] = place_filtered['Reporting starts'].dt.day_name()
+                        
+                        heat_place = place_filtered.groupby(['Placement', 'Day of Week']).agg({
+                            'Amount spent (INR)': 'sum',
+                            'Impressions': 'sum',
+                            'Link clicks': 'sum',
+                            'Landing page views': 'sum',
+                            'Results': 'sum'
+                        }).reset_index()
+                        
+                        active_places = place_agg['Placement'].unique()
+                        heat_place = heat_place[heat_place['Placement'].isin(active_places)]
+                        
+                        # Calculate NaN logic for white gaps
+                        heat_place['CTR (%)'] = np.where(heat_place['Impressions'] > 0, (heat_place['Link clicks'] / heat_place['Impressions']) * 100, np.nan)
+                        heat_place['Link->LPV (%)'] = np.where(heat_place['Link clicks'] > 0, (heat_place['Landing page views'] / heat_place['Link clicks']) * 100, np.nan)
+                        heat_place['LPV->Purchase (%)'] = np.where(heat_place['Landing page views'] > 0, (heat_place['Results'] / heat_place['Landing page views']) * 100, np.nan)
+                        heat_place['CPA (INR)'] = np.where(heat_place['Results'] > 0, heat_place['Amount spent (INR)'] / heat_place['Results'], np.nan)
+                        heat_place['Results_Heatmap'] = np.where(heat_place['Results'] > 0, heat_place['Results'], np.nan)
+                        heat_place['Amount spent (INR)'] = np.where(heat_place['Amount spent (INR)'] > 0, heat_place['Amount spent (INR)'], np.nan)
+                        
+                        pivot_place = heat_place.pivot(index='Placement', columns='Day of Week', values=target_metric_p)
+                        
+                        days_order_p = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                        for day in days_order_p:
+                            if day not in pivot_place.columns:
+                                pivot_place[day] = np.nan
+                        pivot_place = pivot_place.reindex(columns=days_order_p)
+                        
+                        # Sort by overall volume of the placement for better vertical readability
+                        pivot_place['Total'] = pivot_place.sum(axis=1)
+                        pivot_place = pivot_place.sort_values('Total', ascending=False).drop(columns=['Total'])
+                        
+                        if "INR" in target_metric_p or target_metric_p == "Results_Heatmap":
+                            text_display_p = [[f"{val:,.0f}" if pd.notnull(val) else "" for val in row] for row in pivot_place.values]
+                        else:
+                            text_display_p = [[f"{val:.1f}%" if pd.notnull(val) else "" for val in row] for row in pivot_place.values]
+                            
+                        fig_place_heat = go.Figure(data=go.Heatmap(
+                            z=pivot_place.values,
+                            x=pivot_place.columns,
+                            y=pivot_place.index,
+                            colorscale='Inferno',
+                            missing='white',
+                            text=text_display_p,
+                            texttemplate="%{text}",
+                            textfont={"size": 11},
+                            hoverongaps=False
+                        ))
+                        
+                        place_layout = dict(
+                            plot_bgcolor='#FFFFFF', # Shines through NaNs as white blocks
+                            paper_bgcolor='black',
+                            font=dict(color='white'),
+                            xaxis=dict(showgrid=False, title="Day of Week"),
+                            yaxis=dict(showgrid=False, title="Placement", autorange="reversed")
+                        )
+                        
+                        dynamic_height_p = max(400, len(pivot_place) * 35)
+                        
+                        fig_place_heat.update_layout(
+                            title=f"Placement Schedule Map: {heatmap_metric_label_p}",
+                            height=dynamic_height_p,
+                            **place_layout
+                        )
+                        st.plotly_chart(fig_place_heat, use_container_width=True)
+                        
+                        # --- 3. Top Placements Comparison Charts ---
+                        st.markdown("---")
+                        st.markdown("### 📈 Top Placements Visual Comparison")
+                        
+                        col_pb1, col_pb2 = st.columns(2)
+                        with col_pb1:
+                            fig_pb_conv = go.Figure(data=[go.Bar(x=place_agg['Placement'][:10], y=place_agg['Conversions'][:10], marker_color='#32CD32')])
+                            fig_pb_conv.update_layout(
+                                title="Top 10 Placements by Conversions", 
+                                plot_bgcolor='black', paper_bgcolor='black', font=dict(color='white')
+                            )
+                            st.plotly_chart(fig_pb_conv, use_container_width=True)
+                            
+                        with col_pb2:
+                            fig_pb_cpa = go.Figure(data=[go.Bar(x=place_agg['Placement'][:10], y=place_agg['CPA (INR)'][:10], marker_color='#FF4B4B')])
+                            fig_pb_cpa.update_layout(
+                                title="Average CPA by Top Placements (INR)", 
+                                plot_bgcolor='black', paper_bgcolor='black', font=dict(color='white')
+                            )
+                            st.plotly_chart(fig_pb_cpa, use_container_width=True)
 
 else:
     st.info("Upload your raw Facebook Ads CSV or XLSX in the sidebar to run the diagnostics.")
