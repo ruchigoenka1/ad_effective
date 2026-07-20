@@ -1188,7 +1188,6 @@ if uploaded_file:
                             x=pivot_place.columns,
                             y=pivot_place.index,
                             colorscale='Inferno',
-                            missing='white',
                             text=text_display_p,
                             texttemplate="%{text}",
                             textfont={"size": 11},
